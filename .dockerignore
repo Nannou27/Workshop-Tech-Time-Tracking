@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+
+# Git
+.git/
+.gitignore
+
+# Logs
+logs/
+*.log
+
+# Environment files
+.env
+.env.*
+netsuite-credentials.json
+
+# IDE and editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Test and coverage
+coverage/
+.nyc_output/
+*.test.js
+*.spec.js
+
+# Documentation
+README.md
+docs/
+
+# AWS Elastic Beanstalk
+.ebextensions/
+.elasticbeanstalk/
+
+# PM2
+ecosystem.config.js
+
+# Build artifacts
+dist/
+build/
+
+# Misc
+*.md
+LICENSE
+.editorconfig
+.eslintrc*
+.prettierrc*

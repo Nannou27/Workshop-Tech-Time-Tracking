@@ -6,13 +6,25 @@ let client = null;
 // Initialize Redis client
 const initRedis = async () => {
   try {
-    client = redis.createClient({
+    const redisConfig = {
       socket: {
         host: process.env.REDIS_HOST || 'localhost',
         port: parseInt(process.env.REDIS_PORT) || 6379
       },
-      password: process.env.REDIS_PASSWORD || undefined
-    });
+      database: parseInt(process.env.REDIS_DB) || 0
+    };
+
+    // Add password if provided
+    if (process.env.REDIS_PASSWORD) {
+      redisConfig.password = process.env.REDIS_PASSWORD;
+    }
+
+    // Enable TLS for AWS ElastiCache in production
+    if (process.env.REDIS_TLS === 'true') {
+      redisConfig.socket.tls = true;
+    }
+
+    client = redis.createClient(redisConfig);
 
     client.on('error', (err) => {
       logger.error('Redis Client Error:', err);
