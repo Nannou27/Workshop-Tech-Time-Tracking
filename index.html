@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WTTT</title>
+    <style>
+        :root {
+            /* Default (fallback) brand palette — overridden dynamically via /api/v1/branding */
+            --brand-primary: #4B2B7F;   /* purple */
+            --brand-secondary: #0B1F3A; /* dark navy */
+            --brand-accent: #F39C12;    /* orange */
+            --brand-bg: #FFFFFF;
+            --brand-text: #0B1F3A;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, var(--brand-secondary) 0%, var(--brand-primary) 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        .login-container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            width: 100%;
+            max-width: 450px;
+            padding: 40px;
+        }
+        .logo {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .logo img {
+            max-width: 260px;
+            width: 100%;
+            height: auto;
+            margin: 0 auto 14px;
+            display: none; /* shown when branding logo exists */
+        }
+        .logo h1 {
+            color: var(--brand-secondary);
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        .logo p {
+            color: #666;
+            font-size: 1.1em;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+        .form-group input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s;
+        }
+        .form-group input:focus {
+            outline: none;
+            border-color: var(--brand-primary);
+        }
+        .btn-login {
+            width: 100%;
+            padding: 14px;
+            background: var(--brand-primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.3s;
+            margin-top: 10px;
+        }
+        .btn-login:hover {
+            filter: brightness(0.92);
+        }
+        .btn-login:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        .error-message {
+            background: #fee;
+            color: #c33;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            border-left: 4px solid #c33;
+        }
+        .success-message {
+            background: #efe;
+            color: #3c3;
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+            border-left: 4px solid #3c3;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            color: var(--brand-primary);
+            margin-top: 10px;
+        }
+        .api-status {
+            text-align: center;
+            margin-bottom: 20px;
+            padding: 10px;
+            border-radius: 8px;
+            font-size: 0.9em;
+        }
+        .api-status.connected {
+            background: #d4edda;
+            color: #155724;
+        }
+        .api-status.disconnected {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+    <div class="login-container">
+        <div class="logo">
+            <img data-brand="logo" alt="System Logo">
+            <h1><span data-brand="system-name">WTTT</span></h1>
+            <p>Secure Sign In</p>
+        </div>
+
+        <div id="apiStatus" class="api-status disconnected">
+            ⚠️ Checking API connection...
+        </div>
+
+        <div id="errorMessage" class="error-message"></div>
+        <div id="successMessage" class="success-message"></div>
+
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" required placeholder="Enter your email">
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input type="password" id="password" name="password" required placeholder="Enter your password">
+            </div>
+            <button type="submit" class="btn-login" id="loginBtn">Login</button>
+            <div class="loading" id="loading">Logging in...</div>
+        </form>
+    </div>
+
+    <!-- Dynamic branding (global) -->
+    <script src="branding.js"></script>
+
+    <script>
+        // Dynamically determine API URL based on current host
+        const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000/api/v1'
+            : `http://${window.location.hostname}:3000/api/v1`;
+        
+        const HEALTH_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000/health'
+            : `http://${window.location.hostname}:3000/health`;
+        
+        // Check API connection on load
+        async function checkApiConnection() {
+            const statusDiv = document.getElementById('apiStatus');
+            try {
+                const response = await fetch(HEALTH_URL);
+                const data = await response.json();
+                if (data.status === 'healthy') {
+                    statusDiv.textContent = '✅ API Connected';
+                    statusDiv.className = 'api-status connected';
+                } else {
+                    throw new Error('API not healthy');
+                }
+            } catch (error) {
+                statusDiv.textContent = '❌ API Not Connected - Make sure server is running';
+                statusDiv.className = 'api-status disconnected';
+            }
+        }
+
+        // Handle login form submission
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            const errorDiv = document.getElementById('errorMessage');
+            const successDiv = document.getElementById('successMessage');
+            const loginBtn = document.getElementById('loginBtn');
+            const loading = document.getElementById('loading');
+
+            // Hide previous messages
+            errorDiv.style.display = 'none';
+            successDiv.style.display = 'none';
+            loginBtn.disabled = true;
+            loading.style.display = 'block';
+
+            try {
+                const response = await fetch(`${API_BASE_URL}/auth/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email, password })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    // Store tokens
+                    localStorage.setItem('access_token', data.access_token);
+                    localStorage.setItem('refresh_token', data.refresh_token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+
+                    // Show success
+                    successDiv.textContent = `✅ Login successful! Welcome, ${data.user.display_name} (${data.user.role.name})`;
+                    successDiv.style.display = 'block';
+
+                    // Redirect to dashboard based on role
+                    setTimeout(() => {
+                        const roleName = data.user.role.name;
+                        if (roleName === 'Super Admin') {
+                            window.location.href = 'dashboard-super-admin.html';
+                        } else if (roleName === 'Business Unit Admin') {
+                            window.location.href = 'dashboard-bu-admin.html';
+                        } else if (roleName === 'ServiceAdvisor' || roleName === 'Service Advisor') {
+                            window.location.href = 'dashboard-advisor.html';
+                        } else if (roleName === 'Technician') {
+                            window.location.href = 'dashboard-technician.html';
+                        } else {
+                            // Fallback
+                            window.location.href = 'dashboard.html';
+                        }
+                    }, 1500);
+                } else {
+                    // Show error
+                    errorDiv.textContent = data.error?.message || 'Login failed. Please check your credentials.';
+                    errorDiv.style.display = 'block';
+                    loginBtn.disabled = false;
+                    loading.style.display = 'none';
+                }
+            } catch (error) {
+                errorDiv.textContent = 'Connection error. Make sure the API server is running.';
+                errorDiv.style.display = 'block';
+                loginBtn.disabled = false;
+                loading.style.display = 'none';
+            }
+        });
+
+        // Check API on page load
+        checkApiConnection();
+    </script>
+</body>
+</html>

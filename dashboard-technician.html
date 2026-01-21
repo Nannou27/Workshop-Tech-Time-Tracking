@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WTTT - Technician Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, var(--brand-secondary) 0%, var(--brand-primary) 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 8px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .btn-start {
+            background: var(--brand-accent);
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .btn-stop {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .btn-pause {
+            background: var(--brand-primary);
+            color: #fff;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            margin: 5px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        .timer-display {
+            background: white;
+            border-radius: 10px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+        .timer-display h2 {
+            color: #666;
+            margin-bottom: 20px;
+        }
+        .timer-value {
+            font-size: 4em;
+            color: var(--brand-primary);
+            font-weight: bold;
+            font-family: 'Courier New', monospace;
+        }
+        .timer-active {
+            background: linear-gradient(135deg, var(--brand-secondary) 0%, var(--brand-primary) 100%);
+            color: white;
+        }
+        .timer-active .timer-value {
+            color: white;
+        }
+        .section {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        .assignment-card {
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 15px;
+            transition: border-color 0.3s;
+        }
+        .assignment-card:hover {
+            border-color: var(--brand-primary);
+        }
+        .assignment-card.active {
+            border-color: var(--brand-primary);
+            background: #f8fff9;
+        }
+        .assignment-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .badge.assigned { background: var(--brand-secondary); color: white; }
+        .badge.in_progress { background: var(--brand-accent); color: #111; }
+        .badge.completed { background: var(--brand-primary); color: white; }
+        .badge.priority-1 { background: #dc3545; color: white; }
+        .badge.priority-2 { background: var(--brand-accent); color: #111; }
+        .badge.priority-3 { background: #f3f4f6; color: #111; border: 1px solid #d0d7de; }
+        .assignments-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 12px;
+        }
+        .pill-group {
+            display: inline-flex;
+            background: #f3f4f6;
+            border-radius: 10px;
+            padding: 4px;
+            gap: 4px;
+        }
+        .pill {
+            border: none;
+            background: transparent;
+            padding: 10px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            color: #333;
+        }
+        .pill.active {
+            background: white;
+            box-shadow: 0 1px 6px rgba(0,0,0,0.08);
+        }
+        .count-badge {
+            display: inline-block;
+            margin-left: 8px;
+            padding: 2px 10px;
+            border-radius: 999px;
+            font-size: 0.85em;
+            background: rgba(0,0,0,0.08);
+            color: #000;
+            font-weight: 700;
+        }
+        .subtle {
+            color: #666;
+            font-size: 0.95em;
+        }
+        .inline-control {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+        }
+    </style>
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div class="brand" style="display:flex; align-items:center; gap:12px;">
+                <img class="brand-logo" data-brand="logo" alt="System Logo" style="height:34px; width:auto; display:none;">
+                <h1 style="margin:0;"><span data-brand="system-name">WTTT</span> <span style="font-weight:700;">— Technician</span></h1>
+            </div>
+            <div class="user-info">
+                <div id="userDisplay"></div>
+                <a href="index.html" class="btn" onclick="logout()">Logout</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Shift Clock In/Out -->
+        <div class="section" id="shiftSection" style="margin-bottom: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2 style="margin-bottom: 5px;">⏰ Shift Tracking</h2>
+                    <div id="shiftStatus" style="color: #666; font-size: 1.1em;">Not Clocked In</div>
+                    <div id="shiftTime" style="color: var(--brand-primary); font-size: 1.5em; font-weight: bold; margin-top: 5px;">00:00:00</div>
+                    <div id="shiftHint" style="color: #666; font-size: 0.95em; margin-top: 6px;"></div>
+                </div>
+                <div id="shiftControls">
+                    <button class="btn-start" onclick="clockIn()" style="font-size: 1.2em; padding: 15px 40px;">
+                        🕐 Clock In
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Job Timer -->
+        <div class="timer-display" id="timerDisplay">
+            <h2>Active Job Timer</h2>
+            <div class="timer-value" id="timerValue">00:00:00</div>
+            <div id="timerJobInfo" style="margin-top: 15px; color: #666;"></div>
+            <div id="timerControls" style="margin-top: 20px;"></div>
+        </div>
+
+        <div class="section">
+            <div class="assignments-toolbar">
+                <h2 style="margin: 0;">My Job Cards</h2>
+                <div class="pill-group" role="tablist" aria-label="Job card filters">
+                    <button id="tabAssigned" class="pill active" onclick="setAssignmentsView('assigned')">
+                        Assigned <span id="assignedCount" class="count-badge">0</span>
+                    </button>
+                    <button id="tabInProgress" class="pill" onclick="setAssignmentsView('in_progress')">
+                        In Progress <span id="inProgressCount" class="count-badge">0</span>
+                    </button>
+                    <button id="tabCompleted" class="pill" onclick="setAssignmentsView('completed')">
+                        Completed <span id="completedCount" class="count-badge">0</span>
+                    </button>
+                </div>
+            </div>
+            <div style="display:flex; justify-content: space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom: 10px;">
+                <div id="assignmentsHint" class="subtle">
+                    Showing assigned job cards (not started yet).
+                </div>
+                <div id="completedGroupingWrap" class="inline-control" style="display:none;">
+                    <label for="completedGrouping" class="subtle" style="margin:0;">Group completed:</label>
+                    <select id="completedGrouping" onchange="renderAssignments()" style="padding: 6px; border-radius: 6px; border: 1px solid #ddd;">
+                        <option value="none">None</option>
+                        <option value="week">Week</option>
+                        <option value="month">Month</option>
+                    </select>
+                </div>
+            </div>
+            <div id="assignmentsList">Loading...</div>
+        </div>
+    </div>
+
+    <script src="branding.js"></script>
+    <script>
+        const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000/api/v1'
+            : `http://${window.location.hostname}:3000/api/v1`;
+        let accessToken = localStorage.getItem('access_token');
+        let refreshToken = localStorage.getItem('refresh_token');
+        let user = JSON.parse(localStorage.getItem('user') || '{}');
+        let userBusinessUnitId = null;
+        let activeTimer = null;
+        let timerInterval = null;
+
+        // Check if user is logged in
+        if (!accessToken || !user.id) {
+            window.location.href = 'index.html';
+        }
+
+        // Initialize business unit ID from user object
+        if (user.business_unit_id) {
+            userBusinessUnitId = user.business_unit_id;
+        }
+
+        let activeShift = null;
+        let shiftTimerInterval = null;
+        let shiftBreakState = { isOnBreak: false, startTime: null, totalBreakSeconds: 0 };
+        let assignmentsView = 'assigned'; // assigned | in_progress | completed
+        let assignmentsCache = [];
+
+        // Load user's business unit ID if not already set
+        async function loadBusinessUnitId() {
+            if (!userBusinessUnitId) {
+                try {
+                    const response = await apiFetch(`${API_BASE_URL}/users/${user.id}`, {
+                        method: 'GET'
+                    });
+                    const userData = await response.json();
+                    if (response.ok && userData.business_unit_id) {
+                        userBusinessUnitId = userData.business_unit_id;
+                        console.log('Business Unit ID loaded:', userBusinessUnitId);
+                    } else {
+                        console.warn('User is not assigned to any Business Unit - showing all data');
+                    }
+                } catch (error) {
+                    console.error('Error loading business unit:', error);
+                }
+            }
+            return true;
+        }
+
+        // Helper function to add business unit filter to URLs (OPTIONAL)
+        function addBusinessUnitFilter(url) {
+            if (!userBusinessUnitId) {
+                console.log('No business unit filter - user may not be assigned to a BU');
+                return url;
+            }
+            const separator = url.includes('?') ? '&' : '?';
+            return `${url}${separator}business_unit_id=${userBusinessUnitId}`;
+        }
+
+        // Function to refresh access token
+        async function refreshAccessToken() {
+            try {
+                refreshToken = localStorage.getItem('refresh_token');
+                if (!refreshToken) {
+                    throw new Error('No refresh token available');
+                }
+
+                const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        refresh_token: refreshToken
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.access_token) {
+                    accessToken = data.access_token;
+                    localStorage.setItem('access_token', accessToken);
+                    return accessToken;
+                }
+
+                throw new Error(data.error?.message || 'Token refresh failed');
+            } catch (error) {
+                console.error('Token refresh error:', error);
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                localStorage.removeItem('user');
+                window.location.href = 'index.html';
+                throw error;
+            }
+        }
+
+        // Wrapper for fetch that handles token refresh automatically
+        async function apiFetch(url, options = {}) {
+            if (!options.headers) options.headers = {};
+            if (!options.headers['Authorization']) {
+                options.headers['Authorization'] = `Bearer ${accessToken}`;
+            }
+            if (!options.headers['Content-Type']) {
+                options.headers['Content-Type'] = 'application/json';
+            }
+
+            let response = await fetch(url, options);
+
+            if (response.status === 401) {
+                const errorData = await response.json().catch(() => ({}));
+                if (errorData.error?.code === 'TOKEN_EXPIRED') {
+                    await refreshAccessToken();
+                    options.headers['Authorization'] = `Bearer ${accessToken}`;
+                    response = await fetch(url, options);
+                }
+            }
+
+            return response;
+        }
+
+        // Display user info
+        document.getElementById('userDisplay').innerHTML = `
+            <span>${user.display_name} (<span class="badge" style="background: var(--brand-primary); color: white;">Technician</span>)</span>
+        `;
+
+        // Load active timer
+        async function loadActiveTimer() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/timelogs/active`, { method: 'GET' });
+                const data = await response.json();
+                
+                if (data.data && data.data.length > 0) {
+                    activeTimer = data.data[0];
+                    startTimerDisplay(activeTimer);
+                } else {
+                    document.getElementById('timerDisplay').classList.remove('timer-active');
+                    document.getElementById('timerValue').textContent = '00:00:00';
+                    document.getElementById('timerJobInfo').textContent = 'No active timer';
+                    document.getElementById('timerControls').innerHTML = '';
+                }
+            } catch (error) {
+                console.error('Error loading active timer:', error);
+            }
+        }
+
+        // Start timer display
+        function startTimerDisplay(timer) {
+            document.getElementById('timerDisplay').classList.add('timer-active');
+            // Get job card details for asset info
+            apiFetch(`${API_BASE_URL}/jobcards/${timer.job_card_id}`, { method: 'GET' })
+            .then(res => res.json())
+            .then(jobCard => {
+                let jobInfo = `Job: ${timer.job_number} - ${timer.customer_name}`;
+                if (jobCard.asset_name) {
+                    jobInfo += `<br><small style="color: #666;">Asset: ${jobCard.asset_name}${jobCard.asset_tag ? ' (' + jobCard.asset_tag + ')' : ''}</small>`;
+                }
+                if (jobCard.location_name) {
+                    jobInfo += `<br><small style="color: #666;">Location: ${jobCard.location_name}</small>`;
+                }
+                document.getElementById('timerJobInfo').innerHTML = jobInfo;
+            })
+            .catch(err => {
+                document.getElementById('timerJobInfo').textContent = `Job: ${timer.job_number} - ${timer.customer_name}`;
+            });
+            document.getElementById('timerControls').innerHTML = `
+                <button class="btn-pause" onclick="pauseTimer(${timer.id})">Pause</button>
+                <button class="btn-stop" onclick="stopTimer(${timer.id})">Stop</button>
+            `;
+            
+            const startTime = new Date(timer.start_ts);
+            const baseSeconds = Number.isFinite(Number(timer.accumulated_seconds))
+                ? Number(timer.accumulated_seconds)
+                : 0;
+            
+            if (timerInterval) clearInterval(timerInterval);
+            timerInterval = setInterval(() => {
+                const now = new Date();
+                const diff = Math.max(0, Math.floor((now - startTime) / 1000) + Math.floor(baseSeconds));
+                const hours = Math.floor(diff / 3600);
+                const minutes = Math.floor((diff % 3600) / 60);
+                const seconds = diff % 60;
+                document.getElementById('timerValue').textContent = 
+                    `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            }, 1000);
+        }
+
+        // Start timer
+        async function startTimer(assignmentId) {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/timelogs/start`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ assignment_id: assignmentId })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    loadActiveTimer();
+                    loadAssignments();
+                } else {
+                    alert('Error: ' + (data.error?.message || 'Failed to start timer'));
+                }
+            } catch (error) {
+                alert('Error starting timer: ' + error.message);
+            }
+        }
+
+        // Resume timer from last paused segment (or start a new segment if none exists)
+        async function resumeTimer(assignmentId, pausedTimeLogId) {
+            try {
+                let response;
+                if (pausedTimeLogId) {
+                    response = await apiFetch(`${API_BASE_URL}/timelogs/${pausedTimeLogId}/resume`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ notes: 'Resumed' })
+                    });
+                } else {
+                    response = await apiFetch(`${API_BASE_URL}/timelogs/start`, {
+                        method: 'POST',
+                        headers: {
+                            'Authorization': `Bearer ${accessToken}`,
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({ assignment_id: assignmentId })
+                    });
+                }
+
+                const data = await response.json().catch(() => ({}));
+                if (response.ok) {
+                    loadActiveTimer();
+                    loadAssignments();
+                } else {
+                    alert('Error: ' + (data.error?.message || 'Failed to resume timer'));
+                }
+            } catch (error) {
+                alert('Error resuming timer: ' + error.message);
+            }
+        }
+
+        // Stop timer
+        async function stopTimer(timeLogId) {
+            if (!confirm('Stop timer and finish this assignment?')) return;
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/timelogs/${timeLogId}/stop`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ notes: 'Completed' })
+                });
+                if (response.ok) {
+                    if (timerInterval) clearInterval(timerInterval);
+                    loadActiveTimer();
+                    loadAssignments();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.error?.message || 'Failed to stop timer'));
+                }
+            } catch (error) {
+                alert('Error stopping timer: ' + error.message);
+            }
+        }
+
+        // Pause timer
+        async function pauseTimer(timeLogId) {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/timelogs/${timeLogId}/pause`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ notes: 'Paused' })
+                });
+                if (response.ok) {
+                    if (timerInterval) clearInterval(timerInterval);
+                    loadActiveTimer();
+                    loadAssignments();
+                } else {
+                    const data = await response.json();
+                    alert('Error: ' + (data.error?.message || 'Failed to pause timer'));
+                }
+            } catch (error) {
+                alert('Error pausing timer: ' + error.message);
+            }
+        }
+
+        function setAssignmentsView(view) {
+            assignmentsView = (view === 'completed' || view === 'in_progress') ? view : 'assigned';
+            const tabAssigned = document.getElementById('tabAssigned');
+            const tabInProgress = document.getElementById('tabInProgress');
+            const tabCompleted = document.getElementById('tabCompleted');
+
+            tabAssigned.classList.toggle('active', assignmentsView === 'assigned');
+            tabInProgress.classList.toggle('active', assignmentsView === 'in_progress');
+            tabCompleted.classList.toggle('active', assignmentsView === 'completed');
+
+            renderAssignments();
+        }
+
+        function getWeekKey(d) {
+            // ISO week (Monday-based)
+            const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+            const day = date.getUTCDay() || 7;
+            date.setUTCDate(date.getUTCDate() + 4 - day);
+            const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+            const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+            return `${date.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+        }
+
+        function getMonthKey(d) {
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        }
+
+        function formatGroupHeader(groupKey) {
+            if (groupKey.includes('-W')) return `Week ${groupKey.split('-W')[1]} (${groupKey.split('-W')[0]})`;
+            const [y, m] = groupKey.split('-');
+            const dt = new Date(Number(y), Number(m) - 1, 1);
+            return dt.toLocaleString(undefined, { month: 'long', year: 'numeric' });
+        }
+
+        function renderAssignments() {
+            const all = assignmentsCache || [];
+            const completed = all.filter(a => String(a.status || '').toLowerCase() === 'completed');
+            const assigned = all.filter(a => String(a.status || '').toLowerCase() === 'assigned');
+            const inProgress = all.filter(a => String(a.status || '').toLowerCase() === 'in_progress');
+
+            document.getElementById('assignedCount').textContent = assigned.length;
+            document.getElementById('inProgressCount').textContent = inProgress.length;
+            document.getElementById('completedCount').textContent = completed.length;
+
+            const groupingWrap = document.getElementById('completedGroupingWrap');
+            if (groupingWrap) groupingWrap.style.display = assignmentsView === 'completed' ? 'inline-flex' : 'none';
+
+            let list = assigned;
+            let hint = 'Showing assigned job cards (not started yet).';
+            if (assignmentsView === 'in_progress') {
+                list = inProgress;
+                hint = 'Showing in-progress job cards (work started).';
+            } else if (assignmentsView === 'completed') {
+                list = completed;
+                hint = 'Showing completed job cards.';
+            }
+            document.getElementById('assignmentsHint').textContent = hint;
+
+            const grouping = (document.getElementById('completedGrouping')?.value || 'none');
+
+            const renderCard = (assignment) => {
+                // Parse JSON fields if they arrived as strings (MySQL often returns JSON as string)
+                let vehicleInfo = assignment.vehicle_info;
+                let meta = assignment.metadata;
+                try { if (typeof vehicleInfo === 'string') vehicleInfo = JSON.parse(vehicleInfo); } catch (e) { vehicleInfo = null; }
+                try { if (typeof meta === 'string') meta = JSON.parse(meta); } catch (e) { meta = null; }
+
+                const licensePlate = vehicleInfo?.license_plate || vehicleInfo?.plate_number || vehicleInfo?.license || null;
+                const problemDescription =
+                    meta?.work_order_details?.problem_description ||
+                    meta?.problem_description ||
+                    null;
+
+                const isActive = (activeTimer && activeTimer.assignment_id === assignment.id) || !!assignment.active_time_log_id;
+                return `
+                    <div class="assignment-card ${isActive ? 'active' : ''}">
+                        <div class="assignment-header">
+                            <div>
+                                <strong>${assignment.job_number}</strong> - ${assignment.customer_name || '-'}
+                                <span class="badge priority-${assignment.priority || 3}" style="margin-left: 10px;">Priority ${assignment.priority || 3}</span>
+                            </div>
+                            <span class="badge ${assignment.status}">${assignment.status}</span>
+                        </div>
+                        <div style="margin: 10px 0; padding: 10px; background: #f8f9fa; border-radius: 5px;">
+                            <p style="color: #666; margin: 5px 0;"><strong>Work Type:</strong> ${assignment.job_type || assignment.work_type || '-'}</p>
+                            ${licensePlate ? `<p style="color: #666; margin: 5px 0;"><strong>Plate:</strong> ${licensePlate}</p>` : ''}
+                            ${problemDescription ? `<p style="color: #666; margin: 5px 0;"><strong>Issue/Complaint:</strong> ${problemDescription}</p>` : ''}
+                            ${assignment.notes ? `<p style="color: #666; margin: 5px 0;"><strong>Notes:</strong> ${assignment.notes}</p>` : ''}
+                            ${assignment.asset_name ? `
+                                <p style="color: #666; margin: 5px 0;">
+                                    <strong>Asset:</strong> ${assignment.asset_name}${assignment.asset_tag ? ' (' + assignment.asset_tag + ')' : ''}
+                                    ${assignment.asset_serial_number ? ' - S/N: ' + assignment.asset_serial_number : ''}
+                                </p>
+                            ` : ''}
+                            ${assignment.location_name ? `
+                                <p style="color: #666; margin: 5px 0;">
+                                    <strong>Location:</strong> ${assignment.location_name}
+                                </p>
+                            ` : ''}
+                            ${assignment.estimated_hours ? `
+                                <p style="color: #666; margin: 5px 0;">
+                                    <strong>Estimated Time:</strong> ${assignment.estimated_hours} hours
+                                </p>
+                            ` : ''}
+                            ${assignment.total_time_formatted && assignment.total_time_formatted !== '-' ? `
+                                <p style="color: #666; margin: 5px 0;">
+                                    <strong>Time Spent:</strong> <span style="color: ${assignment.status === 'completed' ? 'var(--brand-primary)' : 'var(--brand-secondary)'}; font-weight: bold;">${assignment.total_time_formatted}</span>
+                                </p>
+                            ` : ''}
+                        </div>
+                        ${assignment.status === 'assigned' && !isActive
+                            ? `<button class="btn-start" onclick="startTimer(${assignment.id})">Start Timer</button>`
+                            : isActive
+                                ? `<p style="color: var(--brand-primary); font-weight: bold;">⏱️ Timer Active</p>`
+                                : ((assignment.status === 'in_progress' || assignment.paused_time_log_id)
+                                    ? `<button class="btn-start" onclick="resumeTimer(${assignment.id}, ${assignment.paused_time_log_id || 'null'})">Resume Timer</button>`
+                                    : `<p style="color: #666;">${assignment.status === 'completed' ? '✅ Completed' : 'Timer not started'}</p>`
+                                )
+                        }
+                    </div>
+                `;
+            };
+
+            let html = '';
+            if (assignmentsView === 'completed' && grouping !== 'none') {
+                const groups = new Map();
+                list.forEach(a => {
+                    const raw = a.completed_at || a.completedAt || a.completed_ts || a.completedTs || a.assigned_at || a.assignedAt || a.updated_at || a.updatedAt;
+                    const d = raw ? new Date(raw) : new Date();
+                    const key = grouping === 'month' ? getMonthKey(d) : getWeekKey(d);
+                    if (!groups.has(key)) groups.set(key, []);
+                    groups.get(key).push(a);
+                });
+
+                const sortedKeys = Array.from(groups.keys()).sort((a, b) => (a < b ? 1 : -1));
+                sortedKeys.forEach(key => {
+                    const items = groups.get(key) || [];
+                    html += `<div style="margin: 16px 0 8px; font-weight: 800; color: #333;">${formatGroupHeader(key)} <span class="subtle">(${items.length})</span></div>`;
+                    items.forEach(a => { html += renderCard(a); });
+                });
+            } else {
+                list.forEach(a => { html += renderCard(a); });
+            }
+
+            document.getElementById('assignmentsList').innerHTML = html || '<p>No job cards found.</p>';
+        }
+
+        // Load assignments
+        async function loadAssignments() {
+            try {
+                const url = addBusinessUnitFilter(`${API_BASE_URL}/assignments?technician_id=${user.id}`);
+                const response = await apiFetch(url, { method: 'GET' });
+                const data = await response.json();
+                
+                if (data.data && data.data.length > 0) {
+                    assignmentsCache = data.data || [];
+                    renderAssignments();
+                } else {
+                    assignmentsCache = [];
+                    renderAssignments();
+                }
+            } catch (error) {
+                console.error('Error loading assignments:', error);
+                document.getElementById('assignmentsList').innerHTML = '<p style="color: red;">Error loading assignments: ' + error.message + '</p>';
+            }
+        }
+
+        // ============================================================================
+        // SHIFT CLOCK IN/OUT FUNCTIONS
+        // ============================================================================
+
+        // Load active shift
+        async function loadActiveShift() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/shifts/active`, { method: 'GET' });
+                const data = await response.json();
+                
+                if (response.ok && data) {
+                    activeShift = data;
+                    startShiftTimer(activeShift);
+                } else {
+                    activeShift = null;
+                    document.getElementById('shiftStatus').textContent = 'Not Clocked In';
+                    document.getElementById('shiftTime').textContent = '00:00:00';
+                    document.getElementById('shiftTime').style.color = getComputedStyle(document.documentElement).getPropertyValue('--brand-primary') || '#4B2B7F';
+                    document.getElementById('shiftHint').textContent = '';
+                    document.getElementById('shiftControls').innerHTML = `
+                        <button class="btn-start" onclick="clockIn()" style="font-size: 1.2em; padding: 15px 40px;">
+                            🕐 Clock In
+                        </button>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading active shift:', error);
+            }
+        }
+
+        // Start shift timer display
+        function startShiftTimer(shift) {
+            // Break state may be stored either in dedicated columns or in notes JSON (schema-compatible)
+            let notesObj = null;
+            try {
+                if (typeof shift.notes === 'string') notesObj = JSON.parse(shift.notes);
+                else if (typeof shift.notes === 'object' && shift.notes) notesObj = shift.notes;
+            } catch (e) { notesObj = null; }
+
+            const breakStartIso = shift.break_start_time
+                ? new Date(shift.break_start_time).toISOString()
+                : (notesObj?.break_state?.start_time || null);
+
+            const totalBreakSeconds = Number.isFinite(Number(shift.break_seconds))
+                ? Number(shift.break_seconds)
+                : Number(notesObj?.break_state?.total_break_seconds || 0);
+
+            shiftBreakState = {
+                isOnBreak: !!breakStartIso,
+                startTime: breakStartIso ? new Date(breakStartIso) : null,
+                totalBreakSeconds: Math.max(0, Math.floor(totalBreakSeconds || 0))
+            };
+
+            document.getElementById('shiftStatus').innerHTML = `
+                <span style="color: ${shiftBreakState.isOnBreak ? 'var(--brand-accent)' : 'var(--brand-primary)'};">
+                    ${shiftBreakState.isOnBreak ? '⏸️ On Break' : '✓ Clocked In'}
+                </span>
+                <span style="color: #666;">at ${new Date(shift.clock_in_time).toLocaleTimeString()}</span>
+            `;
+            document.getElementById('shiftTime').style.color = shiftBreakState.isOnBreak
+                ? (getComputedStyle(document.documentElement).getPropertyValue('--brand-accent') || '#F39C12')
+                : (getComputedStyle(document.documentElement).getPropertyValue('--brand-primary') || '#4B2B7F');
+            document.getElementById('shiftHint').innerHTML = shiftBreakState.isOnBreak
+                ? 'Shift timer is <strong>paused</strong>. Press <strong>End Break (Resume Shift)</strong> when you are ready to continue.'
+                : '';
+            document.getElementById('shiftControls').innerHTML = `
+                ${shiftBreakState.isOnBreak ? `
+                    <button class="btn-start" onclick="endBreak()" style="margin-right: 10px;">
+                        ▶ End Break (Resume Shift)
+                    </button>
+                ` : `
+                    <button class="btn-pause" onclick="startBreak()" style="margin-right: 10px;">
+                        ☕ Start Break
+                    </button>
+                `}
+                <button class="btn-stop" onclick="clockOut()">
+                    🕐 Clock Out
+                </button>
+            `;
+            
+            const startTime = new Date(shift.clock_in_time);
+            
+            if (shiftTimerInterval) clearInterval(shiftTimerInterval);
+
+            const renderWorkedTime = () => {
+                const now = new Date();
+                const baseSeconds = Math.max(0, Math.floor((now - startTime) / 1000));
+                const ongoingBreakSeconds = shiftBreakState.isOnBreak && shiftBreakState.startTime
+                    ? Math.max(0, Math.floor((now - shiftBreakState.startTime) / 1000))
+                    : 0;
+                const workedSeconds = Math.max(0, baseSeconds - shiftBreakState.totalBreakSeconds - ongoingBreakSeconds);
+
+                const hours = Math.floor(workedSeconds / 3600);
+                const minutes = Math.floor((workedSeconds % 3600) / 60);
+                const seconds = workedSeconds % 60;
+                document.getElementById('shiftTime').textContent =
+                    `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            };
+
+            // Always render once
+            renderWorkedTime();
+
+            // Only tick when not on break (so the clock "stops" visually)
+            if (!shiftBreakState.isOnBreak) {
+                shiftTimerInterval = setInterval(renderWorkedTime, 1000);
+            }
+        }
+
+        // Clock in
+        async function clockIn() {
+            try {
+                if (!userBusinessUnitId) {
+                    const response = await apiFetch(`${API_BASE_URL}/users/${user.id}`, { method: 'GET' });
+                    const userData = await response.json();
+                    userBusinessUnitId = userData.business_unit_id;
+                }
+
+                const response = await apiFetch(`${API_BASE_URL}/shifts/clock-in`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        business_unit_id: userBusinessUnitId
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    alert('✓ Clocked in successfully!');
+                    loadActiveShift();
+                } else {
+                    alert('Error clocking in: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error clocking in: ' + error.message);
+            }
+        }
+
+        // Clock out
+        async function clockOut() {
+            if (!confirm('Are you sure you want to clock out? This will end your shift.')) {
+                return;
+            }
+            
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/shifts/clock-out`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    if (shiftTimerInterval) clearInterval(shiftTimerInterval);
+                    alert('✓ Clocked out successfully! Total shift time: ' + data.total_hours + ' hours');
+                    loadActiveShift();
+                } else {
+                    alert('Error clocking out: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error clocking out: ' + error.message);
+            }
+        }
+
+        // Start break
+        async function startBreak() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/shifts/start-break`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                if (response.ok) {
+                    await loadActiveShift();
+                } else {
+                    const data = await response.json();
+                    alert('Error starting break: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error starting break: ' + error.message);
+            }
+        }
+
+        // End break
+        async function endBreak() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/shifts/end-break`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${accessToken}`,
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const data = await response.json().catch(() => ({}));
+
+                if (response.ok) {
+                    await loadActiveShift();
+                } else {
+                    alert('Error ending break: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error ending break: ' + error.message);
+            }
+        }
+
+        // Logout
+        function logout() {
+            if (activeShift) {
+                if (!confirm('You are still clocked in! Do you want to logout anyway?\n\nNote: Your shift will remain active.')) {
+                    return;
+                }
+            }
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            localStorage.removeItem('user');
+        }
+
+        // Load business unit ID in background (non-blocking)
+        loadBusinessUnitId().then(() => {
+            console.log('Business unit initialization complete');
+        }).catch(err => {
+            console.error('Business unit initialization failed:', err);
+        });
+        
+        // Load data immediately without waiting for business unit
+        loadActiveShift();
+        loadActiveTimer();
+        loadAssignments();
+        
+        // Refresh timers every 30 seconds
+        setInterval(() => {
+            loadActiveShift();
+            loadActiveTimer();
+            loadAssignments();
+        }, 30000);
+    </script>
+</body>
+</html>
+
+

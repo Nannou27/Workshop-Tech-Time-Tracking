@@ -1,0 +1,3598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WTTT - Super Admin Dashboard</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root {
+            /* Default (fallback) brand palette — overridden dynamically via /api/v1/branding */
+            --brand-primary: #4B2B7F;   /* purple */
+            --brand-secondary: #0B1F3A; /* dark navy */
+            --brand-accent: #F39C12;    /* orange */
+            --brand-bg: #FFFFFF;
+            --brand-text: #0B1F3A;
+        }
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #f5f5f5;
+        }
+        .header {
+            background: linear-gradient(135deg, var(--brand-secondary) 0%, var(--brand-primary) 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header-content {
+            max-width: 1400px;
+            margin: 0 auto;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 1px solid rgba(255,255,255,0.3);
+            padding: 8px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background 0.3s;
+            text-decoration: none;
+            display: inline-block;
+        }
+        .btn:hover {
+            background: rgba(255,255,255,0.3);
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .brand-logo {
+            height: 34px;
+            width: auto;
+            display: none;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 30px auto;
+            padding: 0 20px;
+        }
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .card h3 {
+            color: #666;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+        }
+        .stat-value {
+            font-size: 2.5em;
+            color: #6f42c1;
+            font-weight: bold;
+        }
+        .section {
+            background: white;
+            border-radius: 10px;
+            padding: 25px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .section h2 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #333;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.85em;
+            font-weight: 500;
+        }
+        .badge.success { background: #d4edda; color: #155724; }
+        .badge.warning { background: #fff3cd; color: #856404; }
+        .badge.danger { background: #f8d7da; color: #721c24; }
+        .badge.info { background: #d1ecf1; color: #0c5460; }
+        .filter-bar {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .filter-bar select,
+        .filter-bar input {
+            padding: 8px;
+            border-radius: 5px;
+            border: 1px solid #ddd;
+        }
+        .bu-card {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .bu-card h3 {
+            color: #6f42c1;
+            margin-bottom: 15px;
+        }
+        .bu-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .bu-stat {
+            text-align: center;
+        }
+        .bu-stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #6f42c1;
+        }
+        .bu-stat-label {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 5px;
+        }
+        .technician-comparison {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        .technician-box {
+            padding: 15px;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+        }
+        .technician-box.best {
+            border-color: #28a745;
+            background: #f0fff4;
+        }
+        .technician-box.worst {
+            border-color: #dc3545;
+            background: #fff5f5;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .tabs {
+            display: flex !important;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin: 18px 0 16px 0;
+            padding-bottom: 10px;
+            border-bottom: 3px solid #e9ecef;
+        }
+        .tab {
+            padding: 10px 16px !important;
+            border: 2px solid #e9ecef !important;
+            background: #f8f9fa !important;
+            color: #495057 !important;
+            cursor: pointer !important;
+            font-size: 0.98em !important;
+            border-radius: 8px !important;
+            transition: all 0.3s !important;
+            font-weight: 500 !important;
+            min-width: 140px;
+            text-align: center;
+        }
+        .tab:hover {
+            background: #e9ecef !important;
+            color: #6f42c1 !important;
+            border-color: #6f42c1 !important;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(111, 66, 193, 0.2);
+        }
+        .tab.active {
+            color: white !important;
+            background: #6f42c1 !important;
+            border-color: #6f42c1 !important;
+            font-weight: 600 !important;
+            box-shadow: 0 4px 12px rgba(111, 66, 193, 0.3) !important;
+        }
+
+        /* Branding tab layout tightening */
+        #brandingTab .card {
+            padding: 18px;
+        }
+        #brandingTab .filter-bar.brand-controls {
+            display: grid;
+            grid-template-columns: 2.2fr repeat(5, minmax(140px, 1fr));
+            gap: 12px;
+            align-items: end;
+        }
+        #brandingTab .filter-bar.brand-bu-controls {
+            display: grid;
+            grid-template-columns: 2.2fr repeat(3, minmax(140px, 1fr));
+            gap: 12px;
+            align-items: end;
+        }
+        #brandingTab input[type="color"] {
+            padding: 0;
+            border-radius: 8px;
+            border: 1px solid #ddd;
+        }
+        #brandingTab .brand-logo-preview-box {
+            padding: 10px;
+            border: 1px solid #eee;
+            border-radius: 10px;
+            background: #fff;
+            min-height: 102px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        @media (max-width: 1100px) {
+            #brandingTab .filter-bar.brand-controls {
+                grid-template-columns: 1fr 1fr 1fr;
+            }
+            #brandingTab .filter-bar.brand-bu-controls {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+        @media (max-width: 720px) {
+            .tab {
+                min-width: 120px;
+                flex: 1 1 120px;
+            }
+            #brandingTab .filter-bar.brand-controls,
+            #brandingTab .filter-bar.brand-bu-controls {
+                grid-template-columns: 1fr;
+            }
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        .btn-primary {
+            background: #6f42c1;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 1em;
+        }
+        .btn-primary:hover {
+            background: #5a32a3;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.9em;
+        }
+        .btn-danger:hover {
+            background: #c82333;
+        }
+        .btn-edit {
+            background: #007bff;
+            color: white;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 3px;
+            cursor: pointer;
+            font-size: 0.9em;
+            margin-right: 5px;
+        }
+        .btn-edit:hover {
+            background: #0056b3;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 500;
+        }
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 1em;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            overflow: auto;
+        }
+        .modal-content {
+            background: white;
+            margin: 5% auto;
+            padding: 30px;
+            border-radius: 10px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        .modal-header h2 {
+            color: #333;
+            margin: 0;
+        }
+        .close {
+            color: #aaa;
+            font-size: 28px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .close:hover {
+            color: #000;
+        }
+        .report-section {
+            margin-top: 20px;
+        }
+        .report-section h3 {
+            color: #333;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e9ecef;
+            font-size: 1.5em;
+        }
+        .report-section table {
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .report-section table th {
+            background: #6f42c1;
+            color: white;
+            font-weight: 600;
+            text-align: left;
+            padding: 12px;
+            position: sticky;
+            top: 0;
+        }
+        .report-section table td {
+            padding: 10px 12px;
+        }
+        .report-section table tbody tr:hover {
+            background: #f8f9fa;
+        }
+    </style>
+    <link rel="stylesheet" href="theme.css">
+</head>
+<body>
+    <div class="header">
+        <div class="header-content">
+            <div class="brand">
+                <img class="brand-logo" data-brand="logo" alt="System Logo">
+                <h1><span data-brand="system-name">WTTT</span> <span style="font-weight:700;">— Super Admin</span></h1>
+            </div>
+            <div class="user-info">
+                <div id="userDisplay"></div>
+                <a href="index.html" class="btn" onclick="logout()">Logout</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Summary Stats -->
+        <div class="dashboard-grid">
+            <div class="card">
+                <h3>Total Business Units</h3>
+                <div class="stat-value" id="totalBusinessUnits">-</div>
+            </div>
+            <div class="card">
+                <h3>Total Locations</h3>
+                <div class="stat-value" id="totalLocations">-</div>
+            </div>
+            <div class="card">
+                <h3>Active Service Advisors</h3>
+                <div class="stat-value" id="activeServiceAdvisors">-</div>
+            </div>
+            <div class="card">
+                <h3>Active Technicians</h3>
+                <div class="stat-value" id="activeTechnicians">-</div>
+            </div>
+            <div class="card">
+                <h3>Total Job Cards</h3>
+                <div class="stat-value" id="totalJobCards">-</div>
+            </div>
+            <div class="card">
+                <h3>Jobs Completed Today</h3>
+                <div class="stat-value" id="jobsCompletedToday">-</div>
+            </div>
+        </div>
+
+        <!-- Tabs for different sections -->
+        <div class="section" style="background: white; border-radius: 10px; padding: 25px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px;">
+            <div class="tabs">
+                <button class="tab active" onclick="showTab('overview', this)">📊 Overview</button>
+                <button class="tab" onclick="showTab('users', this)">👥 User Management</button>
+                <button class="tab" onclick="showTab('roles', this)">🛡️ Roles</button>
+                <button class="tab" onclick="showTab('branding', this)">🎨 Branding</button>
+                <button class="tab" onclick="showTab('businessUnits', this)">🏢 Business Units</button>
+                <button class="tab" onclick="showTab('locations', this)">📍 Locations</button>
+                <button class="tab" onclick="showTab('reports', this)">📈 Reports</button>
+            </div>
+
+            <!-- Overview Tab -->
+            <div id="overviewTab" class="tab-content active">
+                <!-- Filters -->
+                <div class="filter-bar">
+                    <select id="filterPeriod" onchange="loadDashboardData()">
+                        <option value="today">Today</option>
+                        <option value="week">This Week</option>
+                        <option value="month" selected>This Month</option>
+                        <option value="all">All Time</option>
+                    </select>
+                    <select id="filterBU" onchange="loadDashboardData()">
+                        <option value="">All Business Units</option>
+                    </select>
+                </div>
+
+                <!-- Business Units Overview -->
+                <div style="margin-top: 20px;">
+                    <h2>Business Units Overview</h2>
+                    <div id="businessUnitsOverview">Loading...</div>
+                </div>
+
+                <!-- Efficiency & Performance -->
+                <div style="margin-top: 30px;">
+                    <h2>Efficiency & Performance</h2>
+                    <div id="efficiencyData">Loading...</div>
+                </div>
+
+                <!-- Top & Worst Technicians -->
+                <div style="margin-top: 30px;">
+                    <h2>Technician Performance</h2>
+                    <div id="technicianPerformance">Loading...</div>
+                </div>
+
+                <!-- Job Delays -->
+                <div style="margin-top: 30px;">
+                    <h2>Job Delays & Overdue</h2>
+                    <div id="jobDelays">Loading...</div>
+                </div>
+            </div>
+
+            <!-- User Management Tab -->
+            <div id="usersTab" class="tab-content" style="display: none;">
+                <h2>User Management</h2>
+                <button class="btn-primary" onclick="openCreateUserModal()" style="margin-bottom: 20px;">+ Create New User</button>
+                <div class="filter-bar" style="margin-bottom: 20px;">
+                    <select id="filterUserRole" onchange="loadUsers()">
+                        <option value="">All Roles</option>
+                        <option value="Super Admin">Super Admin</option>
+                        <option value="Business Unit Admin">Business Unit Admin</option>
+                        <option value="Service Advisor">Service Advisor</option>
+                        <option value="Technician">Technician</option>
+                    </select>
+                    <select id="filterUserBU" onchange="loadUsers()">
+                        <option value="">All Business Units</option>
+                    </select>
+                    <select id="filterUserLocation" onchange="loadUsers()">
+                        <option value="">All Locations</option>
+                    </select>
+                    <input type="text" id="filterUserSearch" placeholder="Search by name or email..." onkeyup="loadUsers()" style="flex: 1; min-width: 200px; padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                </div>
+                <div id="usersList">Loading...</div>
+            </div>
+
+            <!-- Roles Tab -->
+            <div id="rolesTab" class="tab-content" style="display: none;">
+                <h2>Role Management</h2>
+                <div class="filter-bar" style="margin-bottom: 15px;">
+                    <button class="btn-primary" onclick="openCreateRoleModal()" style="background:#17a2b8;">+ Create New Role</button>
+                    <input id="roleSearch" type="text" placeholder="Search roles..." onkeyup="loadRolesManagement()" style="flex:1; min-width: 240px; padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                </div>
+                <div style="color:#666; font-size:0.9em; margin-bottom: 10px;">
+                    Roles control access across the system. System roles cannot be deleted.
+                </div>
+                <div id="rolesList">Loading...</div>
+            </div>
+
+            <!-- Branding Tab -->
+            <div id="brandingTab" class="tab-content" style="display: none;">
+                <h2>🎨 Branding Settings</h2>
+                <div style="color:#666; font-size:0.95em; margin-bottom: 15px;">
+                    Configure system branding dynamically (logo, name, colors). Global branding can be enforced across all Business Units, or each BU can have its own override.
+                </div>
+
+                <div class="card" style="margin-bottom: 18px;">
+                    <h3 style="margin-bottom: 12px; color: #333;">Global Branding</h3>
+                    <label style="display:flex; gap:10px; align-items:center; cursor:pointer; margin-bottom: 12px;">
+                        <input type="checkbox" id="enforceGlobalBranding" style="width:auto;">
+                        <span><strong>Enforce global branding</strong> across all Business Units</span>
+                    </label>
+
+                    <div class="filter-bar brand-controls" style="background:#f8f9fa; padding: 15px; border-radius: 10px;">
+                        <div class="form-group" style="margin:0; flex: 1; min-width: 260px;">
+                            <label style="font-size:0.9em; color:#666; margin-bottom: 5px;">System Name</label>
+                            <input id="brandGlobalName" type="text" placeholder="e.g., Legend Workshop Platform" style="padding: 10px; border-radius: 8px; border: 1px solid #ddd; width: 100%;">
+                        </div>
+                        <div class="form-group" style="margin:0; min-width: 160px;">
+                            <label style="font-size:0.9em; color:#666; margin-bottom: 5px;">Primary</label>
+                            <input id="brandGlobalPrimary" type="color" style="height: 40px; width: 100%;">
+                        </div>
+                        <div class="form-group" style="margin:0; min-width: 160px;">
+                            <label style="font-size:0.9em; color:#666; margin-bottom: 5px;">Secondary</label>
+                            <input id="brandGlobalSecondary" type="color" style="height: 40px; width: 100%;">
+                        </div>
+                        <div class="form-group" style="margin:0; min-width: 160px;">
+                            <label style="font-size:0.9em; color:#666; margin-bottom: 5px;">Accent</label>
+                            <input id="brandGlobalAccent" type="color" style="height: 40px; width: 100%;">
+                        </div>
+                        <div class="form-group" style="margin:0; min-width: 160px;">
+                            <label style="font-size:0.9em; color:#666; margin-bottom: 5px;">Background</label>
+                            <input id="brandGlobalBg" type="color" style="height: 40px; width: 100%;">
+                        </div>
+                        <div class="form-group" style="margin:0; min-width: 160px;">
+                            <label style="font-size:0.9em; color:#666; margin-bottom: 5px;">Text</label>
+                            <input id="brandGlobalText" type="color" style="height: 40px; width: 100%;">
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 14px; display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+                        <div style="flex: 1; min-width: 260px;">
+                            <label style="font-weight:700; color:#333;">Logo (Upload/Replace)</label>
+                            <input id="brandGlobalLogoFile" type="file" accept="image/*" style="display:block; margin-top: 6px;">
+                            <div style="color:#666; font-size:0.9em; margin-top:6px;">Preview before saving. Stored as a data URL in system settings.</div>
+                        </div>
+                        <div style="min-width: 220px;">
+                            <label style="font-weight:700; color:#333;">Preview</label>
+                            <div class="brand-logo-preview-box" style="margin-top: 6px;">
+                                <img id="brandGlobalLogoPreview" alt="Global Logo Preview" style="max-width: 260px; max-height: 80px; display:none;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 14px; display:flex; gap:10px; flex-wrap:wrap;">
+                        <button class="btn-primary" onclick="saveGlobalBranding()" style="background: var(--brand-accent);">Save Global Branding</button>
+                        <button class="btn" onclick="loadBrandingSettings()" style="background:#6c757d; border:none;">Reload</button>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 style="margin-bottom: 12px; color: #333;">Business Unit Override</h3>
+                    <div class="filter-bar" style="margin-bottom: 12px;">
+                        <select id="brandingBUSelect" onchange="loadBUBranding()" style="padding: 10px; border-radius: 8px; border: 1px solid #ddd; min-width: 240px;">
+                            <option value="">Select a Business Unit...</option>
+                        </select>
+                        <div style="color:#666; font-size:0.9em;">Overrides apply only when “Enforce global branding” is OFF.</div>
+                    </div>
+                    <div id="brandingBUStatus" style="margin:-6px 0 10px; color:#666; font-size:0.9em;"></div>
+
+                    <div class="filter-bar brand-bu-controls" style="background:#f8f9fa; padding: 15px; border-radius: 10px;">
+                        <div class="form-group" style="margin:0; flex: 1; min-width: 260px;">
+                            <label style="font-size:0.9em; color:#666; margin-bottom: 5px;">System Name</label>
+                            <input id="brandBUName" type="text" placeholder="Override name for this BU" style="padding: 10px; border-radius: 8px; border: 1px solid #ddd; width: 100%;">
+                        </div>
+                        <div class="form-group" style="margin:0; min-width: 160px;">
+                            <label style="font-size:0.9em; color:#666; margin-bottom: 5px;">Primary</label>
+                            <input id="brandBUPrimary" type="color" style="height: 40px; width: 100%;">
+                        </div>
+                        <div class="form-group" style="margin:0; min-width: 160px;">
+                            <label style="font-size:0.9em; color:#666; margin-bottom: 5px;">Secondary</label>
+                            <input id="brandBUSecondary" type="color" style="height: 40px; width: 100%;">
+                        </div>
+                        <div class="form-group" style="margin:0; min-width: 160px;">
+                            <label style="font-size:0.9em; color:#666; margin-bottom: 5px;">Accent</label>
+                            <input id="brandBUAccent" type="color" style="height: 40px; width: 100%;">
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 14px; display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start;">
+                        <div style="flex: 1; min-width: 260px;">
+                            <label style="font-weight:700; color:#333;">Logo (Upload/Replace)</label>
+                            <input id="brandBULogoFile" type="file" accept="image/*" style="display:block; margin-top: 6px;">
+                        </div>
+                        <div style="min-width: 220px;">
+                            <label style="font-weight:700; color:#333;">Preview</label>
+                            <div class="brand-logo-preview-box" style="margin-top: 6px;">
+                                <img id="brandBULogoPreview" alt="BU Logo Preview" style="max-width: 260px; max-height: 80px; display:none;">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style="margin-top: 14px; display:flex; gap:10px; flex-wrap:wrap;">
+                        <button class="btn-primary" onclick="saveBUBranding()" style="background: var(--brand-primary);">Save BU Override</button>
+                        <button class="btn" onclick="clearBUBranding()" style="background:#dc3545; border:none;">Clear BU Override</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Business Units Tab -->
+            <div id="businessUnitsTab" class="tab-content" style="display: none;">
+                <h2>Business Units Management</h2>
+                <button class="btn-primary" onclick="openCreateBUModal()" style="margin-bottom: 20px;">+ Create New Business Unit</button>
+                <div id="businessUnitsList">Loading...</div>
+            </div>
+
+            <!-- Locations Tab -->
+            <div id="locationsTab" class="tab-content" style="display: none;">
+                <h2>Locations Management</h2>
+                <button class="btn-primary" onclick="openCreateLocationModal()" style="margin-bottom: 20px;">+ Create New Location</button>
+                <div class="filter-bar" style="margin-bottom: 20px;">
+                    <select id="filterLocationBU" onchange="loadLocations()">
+                        <option value="">All Business Units</option>
+                    </select>
+                </div>
+                <div id="locationsList">Loading...</div>
+            </div>
+
+            <!-- Reports Tab -->
+            <div id="reportsTab" class="tab-content" style="display: none;">
+                <h2>📈 Super Admin Reports</h2>
+                
+                <!-- Report Selection -->
+                <div style="margin-bottom: 30px;">
+                    <div style="display: flex; gap: 15px; flex-wrap: wrap;">
+                        <button class="btn-primary" onclick="showReportSection('assets')" style="background: #17a2b8;">
+                            🏭 Assets Inventory
+                        </button>
+                        <button class="btn-primary" onclick="showReportSection('parts')" style="background: #6f42c1;">
+                            🔧 Parts Inventory
+                        </button>
+                        <button class="btn-primary" onclick="showReportSection('crossBU')" style="background: #fd7e14;">
+                            📊 Cross-BU Comparison
+                        </button>
+                        <button class="btn-primary" onclick="showReportSection('techPerformance')" style="background: #0d6efd;">
+                            👷 Technician Performance
+                        </button>
+                        <button class="btn-primary" onclick="showReportSection('consumption')" style="background: #28a745;">
+                            📉 Parts Consumption
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Assets Inventory Report -->
+                <div id="assetsReportSection" class="report-section" style="display: none;">
+                    <h3>🏭 Assets Inventory Report</h3>
+                    <div class="filter-bar" style="margin-bottom: 20px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Business Units</label>
+                                <select id="assetsReportBU" multiple size="3" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="all" selected>🌐 All Business Units</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Locations</label>
+                                <select id="assetsReportLocation" multiple size="3" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="all" selected>🌐 All Locations</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Asset Type</label>
+                                <select id="assetsReportType" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="">All Types</option>
+                                    <option value="Service Tool">Service Tool</option>
+                                    <option value="Vehicle">Vehicle</option>
+                                    <option value="Equipment">Equipment</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Status</label>
+                                <select id="assetsReportStatus" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="">All Statuses</option>
+                                    <option value="active">Active</option>
+                                    <option value="in_maintenance">In Maintenance</option>
+                                    <option value="broken">Broken</option>
+                                    <option value="retired">Retired</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; display: flex; gap: 10px;">
+                            <button class="btn-primary" onclick="loadAssetsInventoryReport()">📊 Generate Report</button>
+                            <button class="btn-primary" onclick="exportAssetsReport()" style="background: #28a745;">📥 Export to Excel</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Assets Summary Cards -->
+                    <div class="dashboard-grid" id="assetsSummaryCards" style="margin-bottom: 30px; display: none;">
+                        <div class="card">
+                            <h3>Total Assets</h3>
+                            <div class="stat-value" id="assetsTotal">-</div>
+                        </div>
+                        <div class="card">
+                            <h3>Total Value</h3>
+                            <div class="stat-value" id="assetsTotalValue" style="font-size: 1.8em;">-</div>
+                        </div>
+                        <div class="card">
+                            <h3>Service Tools</h3>
+                            <div class="stat-value" id="assetsToolsCount">-</div>
+                        </div>
+                        <div class="card">
+                            <h3>Vehicles</h3>
+                            <div class="stat-value" id="assetsVehiclesCount">-</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Assets by BU -->
+                    <div id="assetsByBU" style="margin-bottom: 30px; display: none;">
+                        <h3 style="margin-bottom: 15px;">Assets by Business Unit</h3>
+                        <div id="assetsByBUContent"></div>
+                    </div>
+                    
+                    <!-- Assets Data Table -->
+                    <div id="assetsDataTable" style="display: none;">
+                        <h3 style="margin-bottom: 15px;">Assets Details</h3>
+                        <div style="overflow-x: auto;"></div>
+                    </div>
+                </div>
+
+                <!-- Parts Inventory Report -->
+                <div id="partsReportSection" class="report-section" style="display: none;">
+                    <h3>🔧 Parts Inventory Report</h3>
+                    <div class="filter-bar" style="margin-bottom: 20px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Business Units</label>
+                                <select id="partsReportBU" multiple size="3" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="all" selected>🌐 All Business Units</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Locations</label>
+                                <select id="partsReportLocation" multiple size="3" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="all" selected>🌐 All Locations</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Status</label>
+                                <select id="partsReportStatus" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="">All Statuses</option>
+                                    <option value="in_stock">In Stock</option>
+                                    <option value="installed">Installed</option>
+                                    <option value="ordered">Ordered</option>
+                                    <option value="out_of_stock">Out of Stock</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; display: flex; gap: 10px;">
+                            <button class="btn-primary" onclick="loadPartsInventoryReport()">📊 Generate Report</button>
+                            <button class="btn-primary" onclick="exportPartsReport()" style="background: #28a745;">📥 Export to Excel</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Parts Summary Cards -->
+                    <div class="dashboard-grid" id="partsSummaryCards" style="margin-bottom: 30px; display: none;">
+                        <div class="card">
+                            <h3>Total Parts</h3>
+                            <div class="stat-value" id="partsTotal">-</div>
+                        </div>
+                        <div class="card">
+                            <h3>Inventory Value</h3>
+                            <div class="stat-value" id="partsTotalValue" style="font-size: 1.8em;">-</div>
+                        </div>
+                        <div class="card">
+                            <h3>Parts Used (Value)</h3>
+                            <div class="stat-value" id="partsUsedValue" style="font-size: 1.8em;">-</div>
+                        </div>
+                        <div class="card">
+                            <h3>Business Units</h3>
+                            <div class="stat-value" id="partsBUCount">-</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Parts by BU -->
+                    <div id="partsByBU" style="margin-bottom: 30px; display: none;">
+                        <h3 style="margin-bottom: 15px;">Parts by Business Unit</h3>
+                        <div id="partsByBUContent"></div>
+                    </div>
+                    
+                    <!-- Parts Data Table -->
+                    <div id="partsDataTable" style="display: none;">
+                        <h3 style="margin-bottom: 15px;">Parts Details</h3>
+                        <div style="overflow-x: auto;"></div>
+                    </div>
+                </div>
+
+                <!-- Cross-BU Comparison Report -->
+                <div id="crossBUReportSection" class="report-section" style="display: none;">
+                    <h3>📊 Cross-Business Unit Comparison</h3>
+                    <div class="filter-bar" style="margin-bottom: 20px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Business Units to Compare</label>
+                                <select id="crossBUReportBUs" multiple size="4" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="all" selected>🌐 All Business Units</option>
+                                </select>
+                                <small style="color: #666; font-size: 0.85em; margin-top: 5px; display: block;">Hold Ctrl/Cmd to select multiple</small>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Date Range</label>
+                                <input type="date" id="crossBUStartDate" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; width: 100%; margin-bottom: 10px;">
+                                <input type="date" id="crossBUEndDate" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; display: flex; gap: 10px;">
+                            <button class="btn-primary" onclick="loadCrossBUReport()">📊 Generate Comparison</button>
+                            <button class="btn-primary" onclick="exportCrossBUReport()" style="background: #28a745;">📥 Export to Excel</button>
+                        </div>
+                    </div>
+                    
+                    <!-- Overall Summary -->
+                    <div id="crossBUOverallSummary" style="margin-bottom: 30px; display: none;">
+                        <h3 style="margin-bottom: 15px; color: #6f42c1;">📊 Overall Summary (All Selected BUs)</h3>
+                        <div class="dashboard-grid">
+                            <div class="card">
+                                <h3>Total Assets</h3>
+                                <div class="stat-value" id="crossBUTotalAssets">-</div>
+                                <small style="color: #666;">Value: <span id="crossBUTotalAssetsValue">-</span></small>
+                            </div>
+                            <div class="card">
+                                <h3>Total Parts</h3>
+                                <div class="stat-value" id="crossBUTotalParts">-</div>
+                                <small style="color: #666;">Value: <span id="crossBUTotalPartsValue">-</span></small>
+                            </div>
+                            <div class="card">
+                                <h3>Total Jobs</h3>
+                                <div class="stat-value" id="crossBUTotalJobs">-</div>
+                                <small style="color: #666;">Completed: <span id="crossBUCompletedJobs">-</span></small>
+                            </div>
+                            <div class="card">
+                                <h3>Total Hours</h3>
+                                <div class="stat-value" id="crossBUTotalHours">-</div>
+                                <small style="color: #666;">Across all BUs</small>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Comparison Table -->
+                    <div id="crossBUComparisonTable" style="display: none;">
+                        <h3 style="margin-bottom: 15px;">Business Unit Comparison</h3>
+                        <div style="overflow-x: auto;"></div>
+                    </div>
+                </div>
+
+                <!-- Technician Performance Report -->
+                <div id="techPerformanceReportSection" class="report-section" style="display: none;">
+                    <h3>👷 Technician Performance Report</h3>
+                    <div class="filter-bar" style="margin-bottom: 20px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px;">
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Business Unit</label>
+                                <select id="techPerfReportBU" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="all">All Business Units</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Location</label>
+                                <select id="techPerfReportLocation" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="all">All Locations</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Start Date</label>
+                                <input type="date" id="techPerfStartDate" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; width: 100%;">
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">End Date</label>
+                                <input type="date" id="techPerfEndDate" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; display: flex; gap: 10px;">
+                            <button class="btn-primary" onclick="loadTechPerformanceReport()">📊 Generate Report</button>
+                            <button class="btn-primary" onclick="exportTechPerformanceReport()" style="background: #28a745;">📥 Export to Excel</button>
+                        </div>
+                    </div>
+
+                    <div id="techPerfSummaryCards" class="dashboard-grid" style="margin-bottom: 30px; display: none;">
+                        <div class="card">
+                            <h3>Total Technicians</h3>
+                            <div class="stat-value" id="techPerfTotalTechs">-</div>
+                        </div>
+                        <div class="card">
+                            <h3>Total Job Cards</h3>
+                            <div class="stat-value" id="techPerfTotalJobs">-</div>
+                        </div>
+                        <div class="card">
+                            <h3>Completed Job Cards</h3>
+                            <div class="stat-value" id="techPerfCompletedJobs">-</div>
+                        </div>
+                        <div class="card">
+                            <h3>Total Hours</h3>
+                            <div class="stat-value" id="techPerfTotalHours">-</div>
+                        </div>
+                    </div>
+
+                    <div id="techPerfTable"></div>
+                </div>
+
+                <!-- Parts Consumption Report -->
+                <div id="consumptionReportSection" class="report-section" style="display: none;">
+                    <h3>📉 Parts Consumption Report</h3>
+                    <div class="filter-bar" style="margin-bottom: 20px; background: #f8f9fa; padding: 20px; border-radius: 8px;">
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Business Unit</label>
+                                <select id="consumptionReportBU" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd;">
+                                    <option value="all">All Business Units</option>
+                                </select>
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">Start Date</label>
+                                <input type="date" id="consumptionStartDate" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; width: 100%;">
+                            </div>
+                            <div class="form-group" style="margin: 0;">
+                                <label style="font-size: 0.9em; color: #666; margin-bottom: 5px;">End Date</label>
+                                <input type="date" id="consumptionEndDate" style="padding: 8px; border-radius: 5px; border: 1px solid #ddd; width: 100%;">
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; display: flex; gap: 10px;">
+                            <button class="btn-primary" onclick="loadConsumptionReport()">📊 Generate Report</button>
+                            <button class="btn-primary" onclick="exportConsumptionReport()" style="background: #28a745;">📥 Export to Excel</button>
+                        </div>
+                    </div>
+                    
+                    <div id="consumptionReportResults" style="display: none;">
+                        <div class="dashboard-grid" style="margin-bottom: 30px;">
+                            <div class="card">
+                                <h3>Total Parts Used</h3>
+                                <div class="stat-value" id="consumptionTotalParts">-</div>
+                            </div>
+                            <div class="card">
+                                <h3>Total Cost</h3>
+                                <div class="stat-value" id="consumptionTotalCost" style="font-size: 1.8em;">-</div>
+                            </div>
+                            <div class="card">
+                                <h3>Work Orders</h3>
+                                <div class="stat-value" id="consumptionWorkOrders">-</div>
+                            </div>
+                            <div class="card">
+                                <h3>Average Cost/Job</h3>
+                                <div class="stat-value" id="consumptionAvgCost" style="font-size: 1.8em;">-</div>
+                            </div>
+                        </div>
+                        <div id="consumptionDataTable"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create/Edit User Modal -->
+    <div id="userModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="userModalTitle">Create User</h2>
+                <span class="close" onclick="closeUserModal()">&times;</span>
+            </div>
+            <form id="userForm">
+                <input type="hidden" id="userId">
+                <div class="form-group">
+                    <label>Email *</label>
+                    <input type="email" id="userEmail" required>
+                </div>
+                <div class="form-group">
+                    <label>Display Name *</label>
+                    <input type="text" id="userDisplayName" required>
+                </div>
+                <div class="form-group">
+                    <label>Role *</label>
+                    <select id="userRole" required>
+                        <option value="">Select role...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Business Unit</label>
+                    <select id="userBusinessUnit">
+                        <option value="">None (Unassigned)</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Location</label>
+                    <select id="userLocation">
+                        <option value="">None (Unassigned)</option>
+                    </select>
+                    <small style="color: #666; display: block; margin-top: 5px;">Location must be within the selected Business Unit</small>
+                </div>
+                <div class="form-group">
+                    <label>Employee Number</label>
+                    <input type="text" id="userEmployeeNumber">
+                </div>
+                <div class="form-group">
+                    <label>Cost Center</label>
+                    <input type="text" id="userCostCenter">
+                </div>
+                <div id="passwordFields">
+                    <div class="form-group">
+                        <label>Password <span id="passwordRequired">*</span></label>
+                        <input type="password" id="userPassword">
+                        <small style="color: #666; display: block; margin-top: 5px;" id="passwordHelp">Leave blank to keep current password (when editing)</small>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="userIsActive" checked style="width: auto;">
+                        <span>Active</span>
+                    </label>
+                </div>
+                <div id="technicianFields" style="display: none;">
+                    <h3 style="margin-top: 20px; margin-bottom: 15px;">Technician Details</h3>
+                    <div class="form-group">
+                        <label>Employee Code *</label>
+                        <input type="text" id="techEmployeeCode">
+                    </div>
+                    <div class="form-group">
+                        <label>Trade</label>
+                        <input type="text" id="techTrade">
+                    </div>
+                    <div class="form-group">
+                        <label>Hourly Rate</label>
+                        <input type="number" id="techHourlyRate" step="0.01" min="0">
+                    </div>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn-submit" style="background: #6f42c1; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em;">Save</button>
+                    <button type="button" onclick="closeUserModal()" style="background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Create/Edit Business Unit Modal -->
+    <div id="buModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="buModalTitle">Create Business Unit</h2>
+                <span class="close" onclick="closeBUModal()">&times;</span>
+            </div>
+            <form id="buForm">
+                <input type="hidden" id="buId">
+                <div class="form-group">
+                    <label>Name *</label>
+                    <input type="text" id="buName" required>
+                </div>
+                <div class="form-group">
+                    <label>Code</label>
+                    <input type="text" id="buCode" placeholder="e.g., BU001">
+                    <small style="color: #666; display: block; margin-top: 5px;">Unique code for the business unit</small>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="buDescription" rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="buIsActive" checked style="width: auto;">
+                        <span>Active</span>
+                    </label>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn-submit" style="background: #6f42c1; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em;">Save</button>
+                    <button type="button" onclick="closeBUModal()" style="background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Create/Edit Role Modal -->
+    <div id="roleModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="roleModalTitle">Create Role</h2>
+                <span class="close" onclick="closeRoleModal()">&times;</span>
+            </div>
+            <form id="roleForm">
+                <input type="hidden" id="roleId">
+                <div class="form-group">
+                    <label>Role Name *</label>
+                    <input type="text" id="roleName" required placeholder="e.g., Workshop Manager">
+                    <small style="color:#666; display:block; margin-top:5px;">Must be unique.</small>
+                </div>
+                <div class="form-group">
+                    <label>Description</label>
+                    <textarea id="roleDescription" rows="3" placeholder="What this role is used for..."></textarea>
+                </div>
+                <div class="form-group">
+                    <label>Permissions (JSON) *</label>
+                    <textarea id="rolePermissions" rows="10" style="font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;" required>{
+  "can_view_reports": true
+}</textarea>
+                    <small style="color:#666; display:block; margin-top:5px;">
+                        Enter a valid JSON object. This is stored in the database and used by the backend for authorization.
+                    </small>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn-submit" style="background: #17a2b8; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em;">Save</button>
+                    <button type="button" onclick="closeRoleModal()" style="background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Create/Edit Location Modal -->
+    <div id="locationModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 id="locationModalTitle">Create Location</h2>
+                <span class="close" onclick="closeLocationModal()">&times;</span>
+            </div>
+            <form id="locationForm">
+                <input type="hidden" id="locationId">
+                <div class="form-group">
+                    <label>Name *</label>
+                    <input type="text" id="locationName" required>
+                </div>
+                <div class="form-group">
+                    <label>Business Unit *</label>
+                    <select id="locationBusinessUnit" required>
+                        <option value="">Select Business Unit...</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Address</label>
+                    <input type="text" id="locationAddress">
+                </div>
+                <div class="form-group">
+                    <label>City</label>
+                    <input type="text" id="locationCity">
+                </div>
+                <div class="form-group">
+                    <label>State</label>
+                    <input type="text" id="locationState">
+                </div>
+                <div class="form-group">
+                    <label>Country</label>
+                    <input type="text" id="locationCountry" value="UAE">
+                </div>
+                <div class="form-group">
+                    <label>Postal Code</label>
+                    <input type="text" id="locationPostalCode">
+                </div>
+                <div class="form-group">
+                    <label>Phone</label>
+                    <input type="tel" id="locationPhone">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" id="locationEmail">
+                </div>
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 10px; cursor: pointer;">
+                        <input type="checkbox" id="locationIsActive" checked style="width: auto;">
+                        <span>Active</span>
+                    </label>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 20px;">
+                    <button type="submit" class="btn-submit" style="background: #6f42c1; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em;">Save</button>
+                    <button type="button" onclick="closeLocationModal()" style="background: #6c757d; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 1em;">Cancel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="branding.js"></script>
+    <script>
+        const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000/api/v1'
+            : `http://${window.location.hostname}:3000/api/v1`;
+        let accessToken = localStorage.getItem('access_token');
+        let refreshToken = localStorage.getItem('refresh_token');
+        let user = JSON.parse(localStorage.getItem('user') || '{}');
+
+        // Check if user is logged in and is Super Admin
+        if (!accessToken || !user.id) {
+            window.location.href = 'index.html';
+        }
+        if (user.role?.name !== 'Super Admin') {
+            alert('Access denied. Super Admin privileges required.');
+            window.location.href = 'index.html';
+        }
+
+        // Display user info
+        document.getElementById('userDisplay').innerHTML = `
+            <span>${user.display_name} (<span class="badge" style="background: #6f42c1; color: white;">Super Admin</span>)</span>
+        `;
+
+        // Function to refresh access token
+        async function refreshAccessToken() {
+            try {
+                if (!refreshToken) {
+                    throw new Error('No refresh token available');
+                }
+
+                const response = await fetch(`${API_BASE_URL}/auth/refresh`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        refresh_token: refreshToken
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.access_token) {
+                    accessToken = data.access_token;
+                    localStorage.setItem('access_token', accessToken);
+                    return accessToken;
+                } else {
+                    throw new Error(data.error?.message || 'Token refresh failed');
+                }
+            } catch (error) {
+                console.error('Token refresh error:', error);
+                localStorage.removeItem('access_token');
+                localStorage.removeItem('refresh_token');
+                localStorage.removeItem('user');
+                window.location.href = 'index.html';
+                throw error;
+            }
+        }
+
+        // API fetch wrapper with automatic token refresh
+        async function apiFetch(url, options = {}) {
+            const defaultOptions = {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`
+                }
+            };
+
+            const mergedOptions = {
+                ...defaultOptions,
+                ...options,
+                headers: {
+                    ...defaultOptions.headers,
+                    ...(options.headers || {})
+                }
+            };
+
+            let response = await fetch(url, mergedOptions);
+
+            // If token expired, try to refresh
+            if (response.status === 401) {
+                const errorData = await response.json().catch(() => ({}));
+                if (errorData.error?.code === 'TOKEN_EXPIRED' || errorData.error?.message?.includes('expired')) {
+                    try {
+                        await refreshAccessToken();
+                        mergedOptions.headers['Authorization'] = `Bearer ${accessToken}`;
+                        response = await fetch(url, mergedOptions);
+                    } catch (refreshError) {
+                        throw refreshError;
+                    }
+                }
+            }
+
+            return response;
+        }
+
+        // Load all dashboard data
+        async function loadDashboardData() {
+            await Promise.all([
+                loadSummaryStats(),
+                loadBusinessUnits(),
+                loadBusinessUnitsOverview(),
+                loadEfficiencyData(),
+                loadTechnicianPerformance(),
+                loadJobDelays()
+            ]);
+        }
+
+        // Load summary statistics
+        async function loadSummaryStats() {
+            try {
+                // Load Business Units
+                const buResponse = await apiFetch(`${API_BASE_URL}/business-units`);
+                const buData = await buResponse.json();
+                document.getElementById('totalBusinessUnits').textContent = Array.isArray(buData) ? buData.length : (buData.data?.length || 0);
+
+                // Load Locations
+                const locResponse = await apiFetch(`${API_BASE_URL}/locations`);
+                const locData = await locResponse.json();
+                document.getElementById('totalLocations').textContent = Array.isArray(locData) ? locData.length : (locData.data?.length || 0);
+
+                // Load Users by role
+                const usersResponse = await apiFetch(`${API_BASE_URL}/users`);
+                const usersData = await usersResponse.json();
+                if (usersResponse.ok && usersData.data) {
+                    const serviceAdvisors = usersData.data.filter(u => 
+                        u.role_name === 'Service Advisor' || u.role_name === 'ServiceAdvisor'
+                    ).filter(u => u.is_active).length;
+                    document.getElementById('activeServiceAdvisors').textContent = serviceAdvisors;
+
+                    const technicians = usersData.data.filter(u => 
+                        u.role_name === 'Technician'
+                    ).filter(u => u.is_active).length;
+                    document.getElementById('activeTechnicians').textContent = technicians;
+                }
+
+                // Load Job Cards
+                const jcResponse = await apiFetch(`${API_BASE_URL}/jobcards`);
+                const jcData = await jcResponse.json();
+                if (jcResponse.ok && jcData.data) {
+                    document.getElementById('totalJobCards').textContent = jcData.data.length;
+
+                    // Jobs completed today
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0);
+                    const completedToday = jcData.data.filter(jc => {
+                        if (jc.status !== 'completed') return false;
+                        const completedDate = new Date(jc.completed_at || jc.updated_at);
+                        return completedDate >= today;
+                    }).length;
+                    document.getElementById('jobsCompletedToday').textContent = completedToday;
+                }
+            } catch (error) {
+                console.error('Error loading summary stats:', error);
+            }
+        }
+
+        // Load Business Units for filter
+        async function loadBusinessUnits() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/business-units`);
+                const data = await response.json();
+                const businessUnits = Array.isArray(data) ? data : (data.data || []);
+                
+                const select = document.getElementById('filterBU');
+                select.innerHTML = '<option value="">All Business Units</option>';
+                
+                businessUnits.forEach(bu => {
+                    const option = document.createElement('option');
+                    option.value = bu.id;
+                    option.textContent = bu.name;
+                    select.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading business units:', error);
+            }
+        }
+
+        // Load Business Units Overview
+        async function loadBusinessUnitsOverview() {
+            try {
+                const period = document.getElementById('filterPeriod').value;
+                const buFilter = document.getElementById('filterBU').value;
+                
+                const response = await apiFetch(`${API_BASE_URL}/business-units`);
+                const data = await response.json();
+                const businessUnits = Array.isArray(data) ? data : (data.data || []);
+                
+                let html = '';
+                
+                for (const bu of businessUnits) {
+                    if (buFilter && bu.id.toString() !== buFilter) continue;
+
+                    // Get job cards for this BU
+                    const jcResponse = await apiFetch(`${API_BASE_URL}/jobcards?business_unit_id=${bu.id}`);
+                    const jcData = await jcResponse.json();
+                    const jobCards = jcResponse.ok && jcData.data ? jcData.data : [];
+
+                    // Filter by period
+                    let filteredJobs = jobCards;
+                    if (period === 'today') {
+                        const today = new Date();
+                        today.setHours(0, 0, 0, 0);
+                        filteredJobs = jobCards.filter(jc => new Date(jc.created_at) >= today);
+                    } else if (period === 'week') {
+                        const weekAgo = new Date();
+                        weekAgo.setDate(weekAgo.getDate() - 7);
+                        filteredJobs = jobCards.filter(jc => new Date(jc.created_at) >= weekAgo);
+                    } else if (period === 'month') {
+                        const monthAgo = new Date();
+                        monthAgo.setMonth(monthAgo.getMonth() - 1);
+                        filteredJobs = jobCards.filter(jc => new Date(jc.created_at) >= monthAgo);
+                    }
+
+                    const completed = filteredJobs.filter(jc => jc.status === 'completed').length;
+                    const inProgress = filteredJobs.filter(jc => jc.status === 'in_progress').length;
+                    const open = filteredJobs.filter(jc => jc.status === 'open').length;
+
+                    // Get users for this BU
+                    const usersResponse = await apiFetch(`${API_BASE_URL}/users?business_unit_id=${bu.id}`);
+                    const usersData = await usersResponse.json();
+                    const users = usersResponse.ok && usersData.data ? usersData.data : [];
+                    const serviceAdvisors = users.filter(u => 
+                        (u.role_name === 'Service Advisor' || u.role_name === 'ServiceAdvisor') && u.is_active
+                    ).length;
+                    const technicians = users.filter(u => 
+                        u.role_name === 'Technician' && u.is_active
+                    ).length;
+
+                    html += `
+                        <div class="bu-card">
+                            <h3>${bu.name} ${bu.code ? `(${bu.code})` : ''}</h3>
+                            <div class="bu-stats">
+                                <div class="bu-stat">
+                                    <div class="bu-stat-value">${filteredJobs.length}</div>
+                                    <div class="bu-stat-label">Total Jobs</div>
+                                </div>
+                                <div class="bu-stat">
+                                    <div class="bu-stat-value">${completed}</div>
+                                    <div class="bu-stat-label">Completed</div>
+                                </div>
+                                <div class="bu-stat">
+                                    <div class="bu-stat-value">${inProgress}</div>
+                                    <div class="bu-stat-label">In Progress</div>
+                                </div>
+                                <div class="bu-stat">
+                                    <div class="bu-stat-value">${open}</div>
+                                    <div class="bu-stat-label">Open</div>
+                                </div>
+                                <div class="bu-stat">
+                                    <div class="bu-stat-value">${serviceAdvisors}</div>
+                                    <div class="bu-stat-label">Service Advisors</div>
+                                </div>
+                                <div class="bu-stat">
+                                    <div class="bu-stat-value">${technicians}</div>
+                                    <div class="bu-stat-label">Technicians</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }
+
+                document.getElementById('businessUnitsOverview').innerHTML = html || '<p>No business units found.</p>';
+            } catch (error) {
+                console.error('Error loading business units overview:', error);
+                document.getElementById('businessUnitsOverview').innerHTML = '<p style="color: red;">Error loading data</p>';
+            }
+        }
+
+        // Load Efficiency Data
+        async function loadEfficiencyData() {
+            try {
+                const period = document.getElementById('filterPeriod').value;
+                const buFilter = document.getElementById('filterBU').value;
+                
+                // Get comprehensive report
+                const reportParams = new URLSearchParams();
+                if (period === 'today') reportParams.append('period', 'day');
+                else if (period === 'week') reportParams.append('period', 'week');
+                else if (period === 'month') reportParams.append('period', 'month');
+                
+                const response = await apiFetch(`${API_BASE_URL}/reports/comprehensive?${reportParams.toString()}`);
+                const data = await response.json();
+                
+                if (response.ok && data.data) {
+                    let html = '<table><tr><th>Business Unit</th><th>Total Jobs</th><th>Completed</th><th>Efficiency</th><th>Avg Hours</th></tr>';
+                    
+                    // Group by Business Unit if we have that data
+                    // For now, show overall stats
+                    html += `
+                        <tr>
+                            <td>All Business Units</td>
+                            <td>${data.data.summary?.total || 0}</td>
+                            <td>${data.data.summary?.completed || 0}</td>
+                            <td>${data.data.summary?.efficiency ? (data.data.summary.efficiency * 100).toFixed(1) + '%' : 'N/A'}</td>
+                            <td>${data.data.summary?.total_hours ? data.data.summary.total_hours.toFixed(2) : '0.00'}</td>
+                        </tr>
+                    `;
+                    
+                    html += '</table>';
+                    document.getElementById('efficiencyData').innerHTML = html;
+                } else {
+                    document.getElementById('efficiencyData').innerHTML = '<p>No efficiency data available.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading efficiency data:', error);
+                document.getElementById('efficiencyData').innerHTML = '<p style="color: red;">Error loading efficiency data</p>';
+            }
+        }
+
+        // Load Technician Performance
+        async function loadTechnicianPerformance() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/reports/technician-performance`);
+                const data = await response.json();
+                
+                if (response.ok && data.data && data.data.length > 0) {
+                    // Sort by efficiency
+                    const sorted = [...data.data].sort((a, b) => {
+                        const effA = parseFloat(a.efficiency || 0);
+                        const effB = parseFloat(b.efficiency || 0);
+                        return effB - effA;
+                    });
+
+                    const best = sorted[0];
+                    const worst = sorted[sorted.length - 1];
+
+                    let html = `
+                        <div class="technician-comparison">
+                            <div class="technician-box best">
+                                <h4>🏆 Top Performer</h4>
+                                <p><strong>${best.technician_name || 'N/A'}</strong></p>
+                                <p>Employee Code: ${best.employee_code || 'N/A'}</p>
+                                <p>Completed Jobs: ${best.completed_jobs || 0}</p>
+                                <p>Total Hours: ${best.total_hours ? parseFloat(best.total_hours).toFixed(2) : '0.00'}</p>
+                                <p>Efficiency: <strong>${best.efficiency ? (parseFloat(best.efficiency) * 100).toFixed(1) + '%' : 'N/A'}</strong></p>
+                            </div>
+                            <div class="technician-box worst">
+                                <h4>⚠️ Needs Improvement</h4>
+                                <p><strong>${worst.technician_name || 'N/A'}</strong></p>
+                                <p>Employee Code: ${worst.employee_code || 'N/A'}</p>
+                                <p>Completed Jobs: ${worst.completed_jobs || 0}</p>
+                                <p>Total Hours: ${worst.total_hours ? parseFloat(worst.total_hours).toFixed(2) : '0.00'}</p>
+                                <p>Efficiency: <strong>${worst.efficiency ? (parseFloat(worst.efficiency) * 100).toFixed(1) + '%' : 'N/A'}</strong></p>
+                            </div>
+                        </div>
+                    `;
+
+                    document.getElementById('technicianPerformance').innerHTML = html;
+                } else {
+                    document.getElementById('technicianPerformance').innerHTML = '<p>No technician performance data available.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading technician performance:', error);
+                document.getElementById('technicianPerformance').innerHTML = '<p style="color: red;">Error loading performance data</p>';
+            }
+        }
+
+        // Load Job Delays
+        async function loadJobDelays() {
+            try {
+                const period = document.getElementById('filterPeriod').value;
+                const buFilter = document.getElementById('filterBU').value;
+                
+                const response = await apiFetch(`${API_BASE_URL}/jobcards`);
+                const data = await response.json();
+                
+                if (response.ok && data.data) {
+                    const now = new Date();
+                    const delayed = data.data.filter(jc => {
+                        if (buFilter && jc.business_unit_id && jc.business_unit_id.toString() !== buFilter) return false;
+                        if (jc.status === 'completed') return false;
+                        
+                        // Check if estimated completion time has passed
+                        if (jc.estimated_hours && jc.created_at) {
+                            const created = new Date(jc.created_at);
+                            const estimatedCompletion = new Date(created.getTime() + (jc.estimated_hours * 3600000));
+                            return now > estimatedCompletion;
+                        }
+                        return false;
+                    });
+
+                    let html = '';
+                    if (delayed.length > 0) {
+                        html = '<table><tr><th>Job Number</th><th>Customer</th><th>Status</th><th>Created</th><th>Estimated Hours</th><th>Days Overdue</th></tr>';
+                        delayed.forEach(jc => {
+                            const created = new Date(jc.created_at);
+                            const estimatedCompletion = new Date(created.getTime() + (jc.estimated_hours * 3600000));
+                            const daysOverdue = Math.floor((now - estimatedCompletion) / (1000 * 60 * 60 * 24));
+                            
+                            html += `
+                                <tr>
+                                    <td>${jc.job_number}</td>
+                                    <td>${jc.customer_name || 'N/A'}</td>
+                                    <td><span class="badge warning">${jc.status}</span></td>
+                                    <td>${created.toLocaleDateString()}</td>
+                                    <td>${jc.estimated_hours || 'N/A'}</td>
+                                    <td><span class="badge danger">${daysOverdue} days</span></td>
+                                </tr>
+                            `;
+                        });
+                        html += '</table>';
+                    } else {
+                        html = '<p>No delayed jobs found. Great work! 🎉</p>';
+                    }
+
+                    document.getElementById('jobDelays').innerHTML = html;
+                } else {
+                    document.getElementById('jobDelays').innerHTML = '<p>No job data available.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading job delays:', error);
+                document.getElementById('jobDelays').innerHTML = '<p style="color: red;">Error loading delays</p>';
+            }
+        }
+
+        // Tab switching
+        function showTab(tabName, element) {
+            console.log('Switching to tab:', tabName);
+            try {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                document.querySelectorAll('.tab-content').forEach(t => {
+                    t.classList.remove('active');
+                    t.style.display = 'none';
+                });
+                if (element) {
+                    element.classList.add('active');
+                }
+                const tabContent = document.getElementById(tabName + 'Tab');
+                if (tabContent) {
+                    tabContent.classList.add('active');
+                    tabContent.style.display = 'block';
+                    console.log('Tab content displayed:', tabName);
+                } else {
+                    console.error('Tab content not found:', tabName + 'Tab');
+                }
+                
+                if (tabName === 'overview') {
+                    loadDashboardData();
+                } else if (tabName === 'users') {
+                    loadUsers();
+                    loadRolesForDropdown();
+                    loadBusinessUnitsForDropdown();
+                    loadLocationsForDropdown();
+                } else if (tabName === 'businessUnits') {
+                    loadBusinessUnitsList();
+                } else if (tabName === 'locations') {
+                    loadLocations();
+                    loadBusinessUnitsForLocationFilter();
+                } else if (tabName === 'reports') {
+                    loadReportFilters();
+                } else if (tabName === 'roles') {
+                    loadRolesManagement();
+                } else if (tabName === 'branding') {
+                    loadBrandingSettings();
+                }
+            } catch (error) {
+                console.error('Error switching tab:', error);
+                alert('Error switching tab: ' + error.message);
+            }
+        }
+
+        // ============================================================================
+        // BRANDING SETTINGS (Super Admin)
+        // ============================================================================
+        let brandGlobalLogoDataUrl = null;
+        let brandBULogoDataUrl = null;
+
+        function setLogoPreview(imgId, dataUrl) {
+            const img = document.getElementById(imgId);
+            if (!img) return;
+            if (!dataUrl) {
+                img.style.display = 'none';
+                img.removeAttribute('src');
+                return;
+            }
+            img.src = dataUrl;
+            img.style.display = 'block';
+        }
+
+        function readFileAsDataUrl(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(new Error('Failed to read image'));
+                reader.readAsDataURL(file);
+            });
+        }
+
+        function bindBrandingFileInputs() {
+            const globalFile = document.getElementById('brandGlobalLogoFile');
+            if (globalFile && !globalFile.dataset.bound) {
+                globalFile.dataset.bound = '1';
+                globalFile.addEventListener('change', async (e) => {
+                    const f = e.target.files && e.target.files[0];
+                    if (!f) return;
+                    try {
+                        brandGlobalLogoDataUrl = await readFileAsDataUrl(f);
+                        setLogoPreview('brandGlobalLogoPreview', brandGlobalLogoDataUrl);
+                    } catch (err) {
+                        alert('Logo preview failed: ' + err.message);
+                    }
+                });
+            }
+
+            const buFile = document.getElementById('brandBULogoFile');
+            if (buFile && !buFile.dataset.bound) {
+                buFile.dataset.bound = '1';
+                buFile.addEventListener('change', async (e) => {
+                    const f = e.target.files && e.target.files[0];
+                    if (!f) return;
+                    try {
+                        brandBULogoDataUrl = await readFileAsDataUrl(f);
+                        setLogoPreview('brandBULogoPreview', brandBULogoDataUrl);
+                    } catch (err) {
+                        alert('Logo preview failed: ' + err.message);
+                    }
+                });
+            }
+        }
+
+        function setColorInput(id, hex) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (hex && typeof hex === 'string') el.value = hex;
+        }
+
+        async function loadBrandingSettings() {
+            bindBrandingFileInputs();
+            try {
+                // Load global branding
+                const resp = await apiFetch(`${API_BASE_URL}/branding/global`);
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data?.error?.message || 'Failed to load global branding');
+
+                const b = data.data || {};
+                document.getElementById('enforceGlobalBranding').checked = !!b.enforce_global;
+                document.getElementById('brandGlobalName').value = b.system_name || '';
+                setColorInput('brandGlobalPrimary', b.colors?.primary);
+                setColorInput('brandGlobalSecondary', b.colors?.secondary);
+                setColorInput('brandGlobalAccent', b.colors?.accent);
+                setColorInput('brandGlobalBg', b.colors?.background);
+                setColorInput('brandGlobalText', b.colors?.text);
+
+                brandGlobalLogoDataUrl = b.logo_data_url || null;
+                setLogoPreview('brandGlobalLogoPreview', brandGlobalLogoDataUrl);
+
+                // Load BU list for override selector
+                const buStatus = document.getElementById('brandingBUStatus');
+                if (buStatus) buStatus.textContent = 'Loading Business Units…';
+
+                const buResp = await apiFetch(`${API_BASE_URL}/business-units`);
+                const buData = await buResp.json().catch(() => ({}));
+                const sel = document.getElementById('brandingBUSelect');
+                if (sel) {
+                    sel.innerHTML = '<option value="">Select a Business Unit...</option>';
+                    const rows = Array.isArray(buData?.data) ? buData.data : (Array.isArray(buData) ? buData : []);
+                    if (!buResp.ok) {
+                        const msg = buData?.error?.message || `Failed to load Business Units (HTTP ${buResp.status})`;
+                        if (buStatus) buStatus.textContent = msg;
+                        const opt = document.createElement('option');
+                        opt.value = '';
+                        opt.textContent = 'Error loading Business Units';
+                        sel.appendChild(opt);
+                        return;
+                    }
+                    rows.forEach(bu => {
+                        const opt = document.createElement('option');
+                        opt.value = bu.id;
+                        opt.textContent = bu.name || (`BU ${bu.id}`);
+                        sel.appendChild(opt);
+                    });
+                    if (rows.length === 0) {
+                        const opt = document.createElement('option');
+                        opt.value = '';
+                        opt.textContent = 'No Business Units found';
+                        sel.appendChild(opt);
+                        if (buStatus) buStatus.textContent = 'No Business Units found in the database.';
+                    } else {
+                        if (buStatus) buStatus.textContent = `Loaded ${rows.length} Business Unit(s).`;
+                    }
+                }
+            } catch (err) {
+                alert('Branding settings load failed: ' + err.message);
+            }
+        }
+
+        async function loadBUBranding() {
+            bindBrandingFileInputs();
+            const buId = document.getElementById('brandingBUSelect')?.value;
+            if (!buId) {
+                document.getElementById('brandBUName').value = '';
+                setLogoPreview('brandBULogoPreview', null);
+                brandBULogoDataUrl = null;
+                return;
+            }
+            try {
+                const resp = await apiFetch(`${API_BASE_URL}/branding/business-unit/${encodeURIComponent(buId)}`);
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data?.error?.message || 'Failed to load BU branding');
+                const b = data.data || {};
+                document.getElementById('brandBUName').value = b.system_name || '';
+                setColorInput('brandBUPrimary', b.colors?.primary);
+                setColorInput('brandBUSecondary', b.colors?.secondary);
+                setColorInput('brandBUAccent', b.colors?.accent);
+                brandBULogoDataUrl = b.logo_data_url || null;
+                setLogoPreview('brandBULogoPreview', brandBULogoDataUrl);
+            } catch (err) {
+                alert('BU branding load failed: ' + err.message);
+            }
+        }
+
+        async function saveGlobalBranding() {
+            try {
+                const payload = {
+                    system_name: (document.getElementById('brandGlobalName').value || '').trim() || null,
+                    logo_data_url: brandGlobalLogoDataUrl || null,
+                    enforce_global: !!document.getElementById('enforceGlobalBranding').checked,
+                    colors: {
+                        primary: document.getElementById('brandGlobalPrimary').value,
+                        secondary: document.getElementById('brandGlobalSecondary').value,
+                        accent: document.getElementById('brandGlobalAccent').value,
+                        background: document.getElementById('brandGlobalBg').value,
+                        text: document.getElementById('brandGlobalText').value
+                    }
+                };
+                const resp = await apiFetch(`${API_BASE_URL}/branding/global`, { method: 'PATCH', body: JSON.stringify(payload) });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data?.error?.message || 'Failed to save global branding');
+                alert('Global branding saved.');
+                // Apply immediately on this page
+                try { window.location.reload(); } catch {}
+            } catch (err) {
+                alert('Save failed: ' + err.message);
+            }
+        }
+
+        async function saveBUBranding() {
+            const buId = document.getElementById('brandingBUSelect')?.value;
+            if (!buId) {
+                alert('Please select a Business Unit first.');
+                return;
+            }
+            try {
+                const payload = {
+                    system_name: (document.getElementById('brandBUName').value || '').trim() || null,
+                    logo_data_url: brandBULogoDataUrl || null,
+                    colors: {
+                        primary: document.getElementById('brandBUPrimary').value,
+                        secondary: document.getElementById('brandBUSecondary').value,
+                        accent: document.getElementById('brandBUAccent').value
+                    }
+                };
+                const resp = await apiFetch(`${API_BASE_URL}/branding/business-unit/${encodeURIComponent(buId)}`, { method: 'PATCH', body: JSON.stringify(payload) });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data?.error?.message || 'Failed to save BU branding');
+                alert('BU branding override saved.');
+            } catch (err) {
+                alert('Save failed: ' + err.message);
+            }
+        }
+
+        async function clearBUBranding() {
+            const buId = document.getElementById('brandingBUSelect')?.value;
+            if (!buId) {
+                alert('Please select a Business Unit first.');
+                return;
+            }
+            if (!confirm('Clear this Business Unit branding override?')) return;
+            try {
+                const resp = await apiFetch(`${API_BASE_URL}/branding/business-unit/${encodeURIComponent(buId)}`, { method: 'DELETE' });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) throw new Error(data?.error?.message || 'Failed to clear BU branding');
+                alert('BU branding override cleared.');
+                await loadBUBranding();
+            } catch (err) {
+                alert('Clear failed: ' + err.message);
+            }
+        }
+
+        // ============================================================================
+        // ROLES MANAGEMENT (Super Admin)
+        // ============================================================================
+
+        async function loadRolesManagement() {
+            const container = document.getElementById('rolesList');
+            if (!container) return;
+            container.innerHTML = 'Loading...';
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/roles`);
+                const data = await response.json();
+                const roles = Array.isArray(data) ? data : (data.data || []);
+
+                const q = (document.getElementById('roleSearch')?.value || '').trim().toLowerCase();
+                const filtered = q
+                    ? roles.filter(r =>
+                        String(r.name || '').toLowerCase().includes(q) ||
+                        String(r.description || '').toLowerCase().includes(q)
+                    )
+                    : roles;
+
+                if (!filtered.length) {
+                    container.innerHTML = '<p>No roles found.</p>';
+                    return;
+                }
+
+                let html = `
+                    <table>
+                        <tr>
+                            <th>Name</th>
+                            <th>Description</th>
+                            <th>System</th>
+                            <th>Permissions</th>
+                            <th>Actions</th>
+                        </tr>
+                `;
+
+                filtered.forEach(r => {
+                    const isSystem = !!r.is_system_role;
+                    let permText = '';
+                    try {
+                        const p = (typeof r.permissions === 'string') ? JSON.parse(r.permissions) : (r.permissions || {});
+                        permText = JSON.stringify(p, null, 2);
+                    } catch {
+                        permText = String(r.permissions || '{}');
+                    }
+
+                    html += `
+                        <tr>
+                            <td><strong>${escapeHtml(r.name || '')}</strong></td>
+                            <td>${escapeHtml(r.description || '-')}</td>
+                            <td>${isSystem ? '<span class="badge completed">System</span>' : '<span class="badge open">Custom</span>'}</td>
+                            <td style="max-width: 360px;">
+                                <details>
+                                    <summary style="cursor:pointer;">View JSON</summary>
+                                    <pre style="white-space: pre-wrap; background:#f8f9fa; border:1px solid #eee; padding:10px; border-radius:8px; margin-top:8px; font-size:0.85em; overflow:auto;">${escapeHtml(permText)}</pre>
+                                </details>
+                            </td>
+                            <td>
+                                <button class="btn-primary" onclick="openEditRoleModal(${r.id})" style="padding:6px 10px; background:#007bff;">Edit</button>
+                                <button class="btn-danger" onclick="deleteRole(${r.id}, '${escapeJs(r.name || '')}', ${isSystem ? 'true' : 'false'})" style="padding:6px 10px;" ${isSystem ? 'disabled title="System roles cannot be deleted"' : ''}>Delete</button>
+                            </td>
+                        </tr>
+                    `;
+                });
+
+                html += '</table>';
+                container.innerHTML = html;
+            } catch (error) {
+                console.error('Error loading roles:', error);
+                container.innerHTML = '<p style="color:red;">Error loading roles</p>';
+            }
+        }
+
+        function openCreateRoleModal() {
+            document.getElementById('roleModalTitle').textContent = 'Create Role';
+            document.getElementById('roleId').value = '';
+            document.getElementById('roleName').value = '';
+            document.getElementById('roleDescription').value = '';
+            document.getElementById('rolePermissions').value = JSON.stringify({}, null, 2);
+            document.getElementById('roleModal').style.display = 'block';
+        }
+
+        async function openEditRoleModal(roleId) {
+            try {
+                const resp = await apiFetch(`${API_BASE_URL}/roles/${roleId}`);
+                const data = await resp.json();
+                const role = data.data || data;
+                if (!resp.ok || !role) {
+                    alert('Error loading role');
+                    return;
+                }
+                document.getElementById('roleModalTitle').textContent = 'Edit Role';
+                document.getElementById('roleId').value = role.id;
+                document.getElementById('roleName').value = role.name || '';
+                document.getElementById('roleDescription').value = role.description || '';
+                let perms = role.permissions || {};
+                try {
+                    perms = (typeof perms === 'string') ? JSON.parse(perms) : perms;
+                } catch {
+                    perms = {};
+                }
+                document.getElementById('rolePermissions').value = JSON.stringify(perms || {}, null, 2);
+                document.getElementById('roleModal').style.display = 'block';
+            } catch (e) {
+                alert('Error: ' + e.message);
+            }
+        }
+
+        function closeRoleModal() {
+            document.getElementById('roleModal').style.display = 'none';
+        }
+
+        document.getElementById('roleForm')?.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const id = (document.getElementById('roleId').value || '').trim();
+            const name = (document.getElementById('roleName').value || '').trim();
+            const description = (document.getElementById('roleDescription').value || '').trim();
+            const permissionsText = document.getElementById('rolePermissions').value || '{}';
+
+            let permissions;
+            try {
+                permissions = JSON.parse(permissionsText);
+                if (typeof permissions !== 'object' || Array.isArray(permissions) || permissions === null) {
+                    throw new Error('Permissions must be a JSON object');
+                }
+            } catch (err) {
+                alert('Invalid permissions JSON: ' + err.message);
+                return;
+            }
+
+            const payload = { name, description: description || null, permissions };
+            try {
+                const resp = await apiFetch(`${API_BASE_URL}/roles${id ? `/${id}` : ''}`, {
+                    method: id ? 'PATCH' : 'POST',
+                    body: JSON.stringify(payload)
+                });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    alert('Error: ' + (data.error?.message || 'Failed to save role'));
+                    return;
+                }
+                closeRoleModal();
+                loadRolesManagement();
+                // Refresh roles dropdowns used elsewhere
+                loadRolesForDropdown();
+                alert('Role saved successfully.');
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        });
+
+        async function deleteRole(roleId, roleName, isSystemRole) {
+            if (isSystemRole) {
+                alert('System roles cannot be deleted.');
+                return;
+            }
+            if (!confirm(`Delete role "${roleName}"?\n\nThis cannot be undone.`)) return;
+            try {
+                const resp = await apiFetch(`${API_BASE_URL}/roles/${roleId}`, { method: 'DELETE' });
+                const data = await resp.json().catch(() => ({}));
+                if (!resp.ok) {
+                    alert('Error: ' + (data.error?.message || 'Failed to delete role'));
+                    return;
+                }
+                loadRolesManagement();
+                loadRolesForDropdown();
+                alert('Role deleted.');
+            } catch (err) {
+                alert('Error: ' + err.message);
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+        function escapeJs(str) {
+            return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+        }
+        
+        // Verify tabs are loaded on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('Page loaded, checking tabs...');
+            const tabs = document.querySelectorAll('.tab');
+            console.log('Found tabs:', tabs.length);
+            tabs.forEach((tab, index) => {
+                console.log(`Tab ${index}:`, tab.textContent, tab.onclick ? 'has onclick' : 'no onclick');
+            });
+        });
+
+        // Load roles for dropdown
+        async function loadRolesForDropdown() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/roles`);
+                const data = await response.json();
+                const roles = Array.isArray(data) ? data : (data.data || []);
+                
+                const roleSelect = document.getElementById('userRole');
+                if (roleSelect) {
+                    roleSelect.innerHTML = '<option value="">Select role...</option>';
+                    roles.forEach(role => {
+                        const option = document.createElement('option');
+                        option.value = role.id;
+                        option.textContent = role.name;
+                        roleSelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading roles:', error);
+            }
+        }
+
+        // Load Business Units for dropdown
+        async function loadBusinessUnitsForDropdown() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/business-units`);
+                const data = await response.json();
+                const businessUnits = Array.isArray(data) ? data : (data.data || []);
+                
+                const buSelect = document.getElementById('userBusinessUnit');
+                const buFilterSelect = document.getElementById('filterUserBU');
+                
+                [buSelect, buFilterSelect].forEach(select => {
+                    if (!select) return;
+                    select.innerHTML = '<option value="">None (Unassigned)</option>';
+                    businessUnits.forEach(bu => {
+                        const option = document.createElement('option');
+                        option.value = bu.id;
+                        option.textContent = `${bu.name} ${bu.code ? `(${bu.code})` : ''}`;
+                        select.appendChild(option);
+                    });
+                });
+            } catch (error) {
+                console.error('Error loading business units:', error);
+            }
+        }
+
+        // Load locations for dropdown (filtered by Business Unit)
+        async function loadLocationsForDropdown(businessUnitId = null) {
+            try {
+                let url = `${API_BASE_URL}/locations`;
+                if (businessUnitId) {
+                    url += `?business_unit_id=${businessUnitId}`;
+                }
+                
+                const response = await apiFetch(url);
+                const data = await response.json();
+                const locations = Array.isArray(data) ? data : (data.data || []);
+                
+                const locSelect = document.getElementById('userLocation');
+                const locFilterSelect = document.getElementById('filterUserLocation');
+                
+                [locSelect, locFilterSelect].forEach(select => {
+                    if (!select) return;
+                    select.innerHTML = '<option value="">None (Unassigned)</option>';
+                    locations.forEach(loc => {
+                        const option = document.createElement('option');
+                        option.value = loc.id;
+                        option.textContent = `${loc.name} ${loc.address ? `- ${loc.address}` : ''}`;
+                        select.appendChild(option);
+                    });
+                });
+            } catch (error) {
+                console.error('Error loading locations:', error);
+            }
+        }
+
+        // Update locations when Business Unit changes
+        document.addEventListener('DOMContentLoaded', function() {
+            const userBusinessUnit = document.getElementById('userBusinessUnit');
+            if (userBusinessUnit) {
+                userBusinessUnit.addEventListener('change', function() {
+                    const buId = this.value;
+                    loadLocationsForDropdown(buId || null);
+                });
+            }
+        });
+
+        // Load users
+        async function loadUsers() {
+            try {
+                const roleFilter = document.getElementById('filterUserRole')?.value || '';
+                const buFilter = document.getElementById('filterUserBU')?.value || '';
+                const locFilter = document.getElementById('filterUserLocation')?.value || '';
+                const searchFilter = document.getElementById('filterUserSearch')?.value || '';
+                
+                let url = `${API_BASE_URL}/users`;
+                const params = [];
+                if (roleFilter) params.push(`role=${encodeURIComponent(roleFilter)}`);
+                if (buFilter) params.push(`business_unit_id=${buFilter}`);
+                if (locFilter) params.push(`location_id=${locFilter}`);
+                if (searchFilter) params.push(`search=${encodeURIComponent(searchFilter)}`);
+                
+                if (params.length > 0) {
+                    url += '?' + params.join('&');
+                }
+                
+                const response = await apiFetch(url);
+                const data = await response.json();
+                
+                if (response.ok && data.data) {
+                    console.log('Users data received:', data.data);
+                    console.log('First user ID:', data.data[0]?.id, 'type:', typeof data.data[0]?.id);
+                    let html = '<table><tr><th>Email</th><th>Name</th><th>Role</th><th>Business Unit</th><th>Location</th><th>Status</th><th>Actions</th></tr>';
+                    data.data.forEach(u => {
+                        console.log('Processing user:', u.email, 'ID:', u.id, 'type:', typeof u.id);
+                        // Escape special characters in user data
+                        const email = (u.email || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                        const displayName = (u.display_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                        const roleName = (u.role_name || 'N/A').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                        const buName = (u.business_unit_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                        const locName = (u.location_name || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                        
+                        html += `
+                            <tr>
+                                <td>${u.email || ''}</td>
+                                <td>${u.display_name || ''}</td>
+                                <td><span class="badge info">${roleName}</span></td>
+                                <td>${u.business_unit_name ? u.business_unit_name : '<span style="color: #999;">Unassigned</span>'}</td>
+                                <td>${u.location_name ? u.location_name : '<span style="color: #999;">Unassigned</span>'}</td>
+                                <td><span class="badge ${u.is_active ? 'success' : 'danger'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
+                                <td>
+                                    <button class="btn-edit" data-user-id="${String(u.id)}" data-action="edit">Edit</button>
+                                    <button class="btn-danger" data-user-id="${String(u.id)}" data-user-email="${(u.email || '').replace(/"/g, '&quot;')}" data-action="delete">Delete</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    html += '</table>';
+                    document.getElementById('usersList').innerHTML = html;
+                    
+                    // Attach event listeners to buttons
+                    document.querySelectorAll('[data-action="edit"]').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const userId = this.getAttribute('data-user-id'); // Keep as string (UUID)
+                            console.log('Edit button clicked, userId:', userId, 'type:', typeof userId);
+                            if (!userId) {
+                                console.error('No user ID found in data attribute!');
+                                alert('Error: User ID not found');
+                                return;
+                            }
+                            editUser(userId);
+                        });
+                    });
+                    
+                    document.querySelectorAll('[data-action="delete"]').forEach(btn => {
+                        btn.addEventListener('click', function() {
+                            const userId = this.getAttribute('data-user-id'); // Keep as string (UUID)
+                            const userEmail = this.getAttribute('data-user-email');
+                            deleteUser(userId, userEmail);
+                        });
+                    });
+                } else {
+                    document.getElementById('usersList').innerHTML = '<p>No users found.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading users:', error);
+                document.getElementById('usersList').innerHTML = '<p style="color: red;">Error loading users</p>';
+            }
+        }
+
+        // Open create user modal
+        function openCreateUserModal() {
+            document.getElementById('userModalTitle').textContent = 'Create User';
+            document.getElementById('userId').value = '';
+            document.getElementById('userForm').reset();
+            document.getElementById('passwordRequired').style.display = 'inline';
+            document.getElementById('passwordHelp').textContent = 'Password is required for new users';
+            document.getElementById('userPassword').required = true;
+            document.getElementById('technicianFields').style.display = 'none';
+            loadRolesForDropdown();
+            loadBusinessUnitsForDropdown();
+            loadLocationsForDropdown();
+            document.getElementById('userModal').style.display = 'block';
+        }
+
+        // Edit user
+        async function editUser(userId) {
+            console.log('editUser called with userId:', userId, 'type:', typeof userId);
+            if (!userId || userId === 'undefined' || userId === 'null') {
+                alert('Error: Invalid user ID');
+                return;
+            }
+            try {
+                const url = `${API_BASE_URL}/users/${encodeURIComponent(userId)}`;
+                console.log('Fetching user from URL:', url);
+                const response = await apiFetch(url);
+                const data = await response.json();
+                console.log('User data loaded:', data);
+                console.log('Response status:', response.status);
+                
+                if (response.ok && data) {
+                    document.getElementById('userModalTitle').textContent = 'Edit User';
+                    document.getElementById('userId').value = data.id;
+                    document.getElementById('userEmail').value = data.email || '';
+                    document.getElementById('userDisplayName').value = data.display_name || '';
+                    document.getElementById('userRole').value = data.role_id || '';
+                    document.getElementById('userBusinessUnit').value = data.business_unit_id || '';
+                    document.getElementById('userEmployeeNumber').value = data.employee_number || '';
+                    document.getElementById('userCostCenter').value = data.cost_center || '';
+                    document.getElementById('userIsActive').checked = data.is_active !== false;
+                    document.getElementById('passwordRequired').style.display = 'none';
+                    document.getElementById('passwordHelp').textContent = 'Leave blank to keep current password';
+                    document.getElementById('userPassword').required = false;
+                    document.getElementById('userPassword').value = '';
+                    
+                    // Load dropdowns first
+                    await loadRolesForDropdown();
+                    await loadBusinessUnitsForDropdown();
+                    
+                    // Set values after dropdowns are loaded
+                    document.getElementById('userRole').value = data.role_id || '';
+                    document.getElementById('userBusinessUnit').value = data.business_unit_id || '';
+                    
+                    // Load locations for the user's Business Unit
+                    if (data.business_unit_id) {
+                        await loadLocationsForDropdown(data.business_unit_id);
+                        document.getElementById('userLocation').value = data.location_id || '';
+                    } else {
+                        await loadLocationsForDropdown();
+                    }
+                    
+                    // Show technician fields if role is Technician
+                    if (data.role_name === 'Technician' || data.role_id === 3) {
+                        document.getElementById('technicianFields').style.display = 'block';
+                        // Load technician details if available
+                        try {
+                            const techResponse = await apiFetch(`${API_BASE_URL}/technicians?user_id=${userId}`);
+                            const techData = await techResponse.json();
+                            if (techResponse.ok && techData.data && techData.data.length > 0) {
+                                const tech = techData.data[0];
+                                document.getElementById('techEmployeeCode').value = tech.employee_code || '';
+                                document.getElementById('techTrade').value = tech.trade || '';
+                                document.getElementById('techHourlyRate').value = tech.hourly_rate || '';
+                            }
+                        } catch (error) {
+                            console.error('Error loading technician details:', error);
+                        }
+                    } else {
+                        document.getElementById('technicianFields').style.display = 'none';
+                    }
+                    
+                    // Show modal
+                    const modal = document.getElementById('userModal');
+                    if (modal) {
+                        modal.style.display = 'block';
+                        console.log('Modal displayed successfully');
+                    } else {
+                        console.error('Modal element not found!');
+                        alert('Error: Modal element not found. Please refresh the page.');
+                    }
+                } else {
+                    alert('Error loading user: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error in editUser:', error);
+                alert('Error loading user: ' + error.message);
+            }
+        }
+
+        // Delete user
+        async function deleteUser(userId, userEmail) {
+            if (!confirm(`Are you sure you want to delete user "${userEmail}"?\n\nThis action cannot be undone. The user will be permanently removed from the system.`)) {
+                return;
+            }
+            
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/users/${userId}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    alert('User deleted successfully');
+                    loadUsers();
+                } else {
+                    const data = await response.json();
+                    alert('Error deleting user: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                alert('Error deleting user: ' + error.message);
+            }
+        }
+
+        // Close user modal
+        function closeUserModal() {
+            document.getElementById('userModal').style.display = 'none';
+            document.getElementById('userForm').reset();
+        }
+
+        // Handle user form submission
+        document.getElementById('userForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const userId = document.getElementById('userId').value;
+            const isEdit = !!userId;
+            const submitBtn = e.target.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = isEdit ? 'Updating...' : 'Creating...';
+            
+            try {
+                const userData = {
+                    email: document.getElementById('userEmail').value.trim(),
+                    display_name: document.getElementById('userDisplayName').value.trim(),
+                    role_id: parseInt(document.getElementById('userRole').value),
+                    business_unit_id: document.getElementById('userBusinessUnit').value ? parseInt(document.getElementById('userBusinessUnit').value) : null,
+                    location_id: document.getElementById('userLocation').value ? parseInt(document.getElementById('userLocation').value) : null,
+                    employee_number: document.getElementById('userEmployeeNumber').value.trim() || null,
+                    cost_center: document.getElementById('userCostCenter').value.trim() || null,
+                    is_active: document.getElementById('userIsActive').checked
+                };
+                
+                const password = document.getElementById('userPassword').value.trim();
+                if (password || !isEdit) {
+                    userData.password = password;
+                }
+                
+                let response;
+                if (isEdit) {
+                    response = await apiFetch(`${API_BASE_URL}/users/${userId}`, {
+                        method: 'PATCH',
+                        body: JSON.stringify(userData)
+                    });
+                } else {
+                    if (!password) {
+                        alert('Password is required for new users');
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Save';
+                        return;
+                    }
+                    response = await apiFetch(`${API_BASE_URL}/users`, {
+                        method: 'POST',
+                        body: JSON.stringify(userData)
+                    });
+                }
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    // If creating/updating a technician, handle technician profile
+                    if (userData.role_id === 3) { // Technician role
+                        const techEmployeeCode = document.getElementById('techEmployeeCode').value.trim();
+                        if (techEmployeeCode) {
+                            const techUserId = isEdit ? userId : data.id;
+                            const techData = {
+                                employee_code: techEmployeeCode,
+                                trade: document.getElementById('techTrade').value.trim() || null,
+                                hourly_rate: document.getElementById('techHourlyRate').value ? parseFloat(document.getElementById('techHourlyRate').value) : null
+                            };
+                            
+                            try {
+                                // Check if technician profile exists
+                                const techCheckResponse = await apiFetch(`${API_BASE_URL}/technicians?user_id=${techUserId}`);
+                                const techCheckData = await techCheckResponse.json();
+                                
+                                if (techCheckResponse.ok && techCheckData.data && techCheckData.data.length > 0) {
+                                    // Update existing technician
+                                    await apiFetch(`${API_BASE_URL}/technicians/${techCheckData.data[0].id}`, {
+                                        method: 'PATCH',
+                                        body: JSON.stringify(techData)
+                                    });
+                                } else {
+                                    // Create new technician profile
+                                    techData.user_id = techUserId;
+                                    await apiFetch(`${API_BASE_URL}/technicians`, {
+                                        method: 'POST',
+                                        body: JSON.stringify(techData)
+                                    });
+                                }
+                            } catch (techError) {
+                                console.error('Error saving technician profile:', techError);
+                            }
+                        }
+                    }
+                    
+                    alert(isEdit ? 'User updated successfully!' : 'User created successfully!');
+                    closeUserModal();
+                    loadUsers();
+                } else {
+                    alert('Error: ' + (data.error?.message || 'Failed to save user'));
+                }
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Save';
+            }
+        });
+
+        // Load Business Units list
+        async function loadBusinessUnitsList() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/business-units`);
+                const data = await response.json();
+                const businessUnits = Array.isArray(data) ? data : (data.data || []);
+                
+                if (businessUnits.length > 0) {
+                    let html = '<table><tr><th>Name</th><th>Code</th><th>Description</th><th>Actions</th></tr>';
+                    businessUnits.forEach(bu => {
+                        html += `
+                            <tr>
+                                <td>${bu.name}</td>
+                                <td>${bu.code || '-'}</td>
+                                <td>${bu.description || '-'}</td>
+                                <td>
+                                    <button class="btn-edit" onclick="editBusinessUnit(${bu.id})">Edit</button>
+                                    <button class="btn-danger" onclick="deleteBusinessUnit(${bu.id}, '${bu.name}')">Delete</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    html += '</table>';
+                    document.getElementById('businessUnitsList').innerHTML = html;
+                } else {
+                    document.getElementById('businessUnitsList').innerHTML = '<p>No business units found.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading business units:', error);
+                document.getElementById('businessUnitsList').innerHTML = '<p style="color: red;">Error loading business units</p>';
+            }
+        }
+
+        // Business Unit Management Functions
+        function openCreateBUModal() {
+            document.getElementById('buModalTitle').textContent = 'Create Business Unit';
+            document.getElementById('buId').value = '';
+            document.getElementById('buForm').reset();
+            document.getElementById('buIsActive').checked = true;
+            document.getElementById('buModal').style.display = 'block';
+        }
+
+        async function editBusinessUnit(id) {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/business-units/${id}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('buModalTitle').textContent = 'Edit Business Unit';
+                    document.getElementById('buId').value = data.id;
+                    document.getElementById('buName').value = data.name || '';
+                    document.getElementById('buCode').value = data.code || '';
+                    document.getElementById('buDescription').value = data.description || '';
+                    document.getElementById('buIsActive').checked = data.is_active !== false;
+                    document.getElementById('buModal').style.display = 'block';
+                } else {
+                    alert('Error loading business unit: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error loading business unit:', error);
+                alert('Error loading business unit: ' + error.message);
+            }
+        }
+
+        async function deleteBusinessUnit(id, name) {
+            if (!confirm(`Are you sure you want to delete Business Unit "${name}"?\n\nThis action will deactivate the business unit. Users and locations associated with it will remain, but the business unit will be marked as inactive.`)) {
+                return;
+            }
+            
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/business-units/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    alert('Business unit deleted successfully');
+                    loadBusinessUnitsList();
+                    // Refresh dropdowns
+                    loadBusinessUnitsForDropdown();
+                    loadBusinessUnitsForLocationFilter();
+                } else {
+                    const data = await response.json();
+                    alert('Error deleting business unit: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error deleting business unit:', error);
+                alert('Error deleting business unit: ' + error.message);
+            }
+        }
+
+        function closeBUModal() {
+            document.getElementById('buModal').style.display = 'none';
+            document.getElementById('buForm').reset();
+        }
+
+        // Handle Business Unit form submission
+        document.addEventListener('DOMContentLoaded', function() {
+            const buForm = document.getElementById('buForm');
+            if (buForm) {
+                buForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    
+                    const buId = document.getElementById('buId').value;
+                    const isEdit = !!buId;
+                    const submitBtn = e.target.querySelector('button[type="submit"]');
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = isEdit ? 'Updating...' : 'Creating...';
+                    
+                    try {
+                        const buData = {
+                            name: document.getElementById('buName').value.trim(),
+                            code: document.getElementById('buCode').value.trim() || null,
+                            description: document.getElementById('buDescription').value.trim() || null,
+                            is_active: document.getElementById('buIsActive').checked
+                        };
+                        
+                        let response;
+                        if (isEdit) {
+                            response = await apiFetch(`${API_BASE_URL}/business-units/${buId}`, {
+                                method: 'PATCH',
+                                body: JSON.stringify(buData)
+                            });
+                        } else {
+                            response = await apiFetch(`${API_BASE_URL}/business-units`, {
+                                method: 'POST',
+                                body: JSON.stringify(buData)
+                            });
+                        }
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                            alert(isEdit ? 'Business unit updated successfully!' : 'Business unit created successfully!');
+                            closeBUModal();
+                            loadBusinessUnitsList();
+                            // Refresh dropdowns
+                            loadBusinessUnitsForDropdown();
+                            loadBusinessUnitsForLocationFilter();
+                        } else {
+                            alert('Error: ' + (data.error?.message || 'Failed to save business unit'));
+                        }
+                    } catch (error) {
+                        console.error('Error saving business unit:', error);
+                        alert('Error: ' + error.message);
+                    } finally {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Save';
+                    }
+                });
+            }
+        });
+
+        // Location Management Functions
+        async function loadLocations() {
+            try {
+                const buFilter = document.getElementById('filterLocationBU')?.value || '';
+                
+                let url = `${API_BASE_URL}/locations`;
+                if (buFilter) {
+                    url += `?business_unit_id=${buFilter}`;
+                }
+                
+                const response = await apiFetch(url);
+                const data = await response.json();
+                const locations = Array.isArray(data) ? data : (data.data || []);
+                
+                if (locations.length > 0) {
+                    let html = '<table><tr><th>Name</th><th>Business Unit</th><th>Address</th><th>City</th><th>Phone</th><th>Email</th><th>Status</th><th>Actions</th></tr>';
+                    locations.forEach(loc => {
+                        const address = loc.address || '-';
+                        const city = loc.city || '-';
+                        const phone = loc.phone || '-';
+                        const email = loc.email || '-';
+                        
+                        html += `
+                            <tr>
+                                <td>${loc.name}</td>
+                                <td>${loc.business_unit_name || 'N/A'}</td>
+                                <td>${address}</td>
+                                <td>${city}</td>
+                                <td>${phone}</td>
+                                <td>${email}</td>
+                                <td><span class="badge ${loc.is_active ? 'success' : 'danger'}">${loc.is_active ? 'Active' : 'Inactive'}</span></td>
+                                <td>
+                                    <button class="btn-edit" onclick="editLocation(${loc.id})">Edit</button>
+                                    <button class="btn-danger" onclick="deleteLocation(${loc.id}, '${loc.name.replace(/'/g, "\\'")}')">Delete</button>
+                                </td>
+                            </tr>
+                        `;
+                    });
+                    html += '</table>';
+                    document.getElementById('locationsList').innerHTML = html;
+                } else {
+                    document.getElementById('locationsList').innerHTML = '<p>No locations found.</p>';
+                }
+            } catch (error) {
+                console.error('Error loading locations:', error);
+                document.getElementById('locationsList').innerHTML = '<p style="color: red;">Error loading locations</p>';
+            }
+        }
+
+        async function loadBusinessUnitsForLocationFilter() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/business-units`);
+                const data = await response.json();
+                const businessUnits = Array.isArray(data) ? data : (data.data || []);
+                
+                const filterSelect = document.getElementById('filterLocationBU');
+                if (filterSelect) {
+                    filterSelect.innerHTML = '<option value="">All Business Units</option>';
+                    businessUnits.forEach(bu => {
+                        const option = document.createElement('option');
+                        option.value = bu.id;
+                        option.textContent = `${bu.name} ${bu.code ? `(${bu.code})` : ''}`;
+                        filterSelect.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading business units for filter:', error);
+            }
+        }
+
+        async function loadBusinessUnitsForLocationModal() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/business-units?is_active=true`);
+                const data = await response.json();
+                const businessUnits = Array.isArray(data) ? data : (data.data || []);
+                
+                const select = document.getElementById('locationBusinessUnit');
+                if (select) {
+                    select.innerHTML = '<option value="">Select Business Unit...</option>';
+                    businessUnits.forEach(bu => {
+                        const option = document.createElement('option');
+                        option.value = bu.id;
+                        option.textContent = `${bu.name} ${bu.code ? `(${bu.code})` : ''}`;
+                        select.appendChild(option);
+                    });
+                }
+            } catch (error) {
+                console.error('Error loading business units:', error);
+            }
+        }
+
+        async function openCreateLocationModal() {
+            document.getElementById('locationModalTitle').textContent = 'Create Location';
+            document.getElementById('locationId').value = '';
+            document.getElementById('locationForm').reset();
+            document.getElementById('locationIsActive').checked = true;
+            document.getElementById('locationCountry').value = 'UAE';
+            await loadBusinessUnitsForLocationModal();
+            document.getElementById('locationModal').style.display = 'block';
+        }
+
+        async function editLocation(id) {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/locations/${id}`);
+                const data = await response.json();
+                
+                if (response.ok) {
+                    document.getElementById('locationModalTitle').textContent = 'Edit Location';
+                    document.getElementById('locationId').value = data.id;
+                    document.getElementById('locationName').value = data.name || '';
+                    document.getElementById('locationAddress').value = data.address || '';
+                    document.getElementById('locationCity').value = data.city || '';
+                    document.getElementById('locationState').value = data.state || '';
+                    document.getElementById('locationCountry').value = data.country || 'UAE';
+                    document.getElementById('locationPostalCode').value = data.postal_code || '';
+                    document.getElementById('locationPhone').value = data.phone || '';
+                    document.getElementById('locationEmail').value = data.email || '';
+                    document.getElementById('locationIsActive').checked = data.is_active !== false;
+                    
+                    await loadBusinessUnitsForLocationModal();
+                    document.getElementById('locationBusinessUnit').value = data.business_unit_id || '';
+                    
+                    document.getElementById('locationModal').style.display = 'block';
+                } else {
+                    alert('Error loading location: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error loading location:', error);
+                alert('Error loading location: ' + error.message);
+            }
+        }
+
+        async function deleteLocation(id, name) {
+            if (!confirm(`Are you sure you want to delete Location "${name}"?\n\nThis action will deactivate the location. Assets associated with it will remain, but the location will be marked as inactive.`)) {
+                return;
+            }
+            
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/locations/${id}`, {
+                    method: 'DELETE'
+                });
+                
+                if (response.ok) {
+                    alert('Location deleted successfully');
+                    loadLocations();
+                    // Refresh dropdowns
+                    loadLocationsForDropdown();
+                } else {
+                    const data = await response.json();
+                    alert('Error deleting location: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error deleting location:', error);
+                alert('Error deleting location: ' + error.message);
+            }
+        }
+
+        function closeLocationModal() {
+            document.getElementById('locationModal').style.display = 'none';
+            document.getElementById('locationForm').reset();
+        }
+
+        // Handle Location form submission
+        document.addEventListener('DOMContentLoaded', function() {
+            const locationForm = document.getElementById('locationForm');
+            if (locationForm) {
+                locationForm.addEventListener('submit', async (e) => {
+                    e.preventDefault();
+                    
+                    const locationId = document.getElementById('locationId').value;
+                    const isEdit = !!locationId;
+                    const submitBtn = e.target.querySelector('button[type="submit"]');
+                    submitBtn.disabled = true;
+                    submitBtn.textContent = isEdit ? 'Updating...' : 'Creating...';
+                    
+                    try {
+                        const locationData = {
+                            name: document.getElementById('locationName').value.trim(),
+                            business_unit_id: parseInt(document.getElementById('locationBusinessUnit').value),
+                            address: document.getElementById('locationAddress').value.trim() || null,
+                            city: document.getElementById('locationCity').value.trim() || null,
+                            state: document.getElementById('locationState').value.trim() || null,
+                            country: document.getElementById('locationCountry').value.trim() || 'UAE',
+                            postal_code: document.getElementById('locationPostalCode').value.trim() || null,
+                            phone: document.getElementById('locationPhone').value.trim() || null,
+                            email: document.getElementById('locationEmail').value.trim() || null,
+                            is_active: document.getElementById('locationIsActive').checked
+                        };
+                        
+                        if (!locationData.business_unit_id) {
+                            alert('Please select a Business Unit');
+                            submitBtn.disabled = false;
+                            submitBtn.textContent = 'Save';
+                            return;
+                        }
+                        
+                        let response;
+                        if (isEdit) {
+                            response = await apiFetch(`${API_BASE_URL}/locations/${locationId}`, {
+                                method: 'PATCH',
+                                body: JSON.stringify(locationData)
+                            });
+                        } else {
+                            response = await apiFetch(`${API_BASE_URL}/locations`, {
+                                method: 'POST',
+                                body: JSON.stringify(locationData)
+                            });
+                        }
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                            alert(isEdit ? 'Location updated successfully!' : 'Location created successfully!');
+                            closeLocationModal();
+                            loadLocations();
+                            // Refresh dropdowns
+                            loadLocationsForDropdown();
+                        } else {
+                            alert('Error: ' + (data.error?.message || 'Failed to save location'));
+                        }
+                    } catch (error) {
+                        console.error('Error saving location:', error);
+                        alert('Error: ' + error.message);
+                    } finally {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Save';
+                    }
+                });
+            }
+        });
+
+        // Close modals when clicking outside
+        window.onclick = function(event) {
+            const userModal = document.getElementById('userModal');
+            const buModal = document.getElementById('buModal');
+            const locationModal = document.getElementById('locationModal');
+            const roleModal = document.getElementById('roleModal');
+            
+            if (event.target === userModal) {
+                closeUserModal();
+            } else if (event.target === buModal) {
+                closeBUModal();
+            } else if (event.target === locationModal) {
+                closeLocationModal();
+            } else if (event.target === roleModal) {
+                closeRoleModal();
+            }
+        };
+
+        // Update role dropdown to show/hide technician fields (by role name, not hardcoded id)
+        document.addEventListener('DOMContentLoaded', function() {
+            const userRole = document.getElementById('userRole');
+            if (userRole) {
+                userRole.addEventListener('change', function() {
+                    const roleName = this.selectedOptions?.[0]?.textContent?.trim();
+                    const technicianFields = document.getElementById('technicianFields');
+                    if (technicianFields) {
+                        technicianFields.style.display = roleName === 'Technician' ? 'block' : 'none';
+                    }
+                });
+            }
+        });
+
+        // Logout
+        function logout() {
+            localStorage.removeItem('access_token');
+            localStorage.removeItem('refresh_token');
+            localStorage.removeItem('user');
+        }
+
+        // ============================================================================
+        // REPORTS FUNCTIONS
+        // ============================================================================
+
+        // Show specific report section
+        function showReportSection(reportType) {
+            // Hide all report sections
+            document.querySelectorAll('.report-section').forEach(section => {
+                section.style.display = 'none';
+            });
+            
+            // Show selected report section
+            if (reportType === 'assets') {
+                document.getElementById('assetsReportSection').style.display = 'block';
+            } else if (reportType === 'parts') {
+                document.getElementById('partsReportSection').style.display = 'block';
+            } else if (reportType === 'crossBU') {
+                document.getElementById('crossBUReportSection').style.display = 'block';
+            } else if (reportType === 'techPerformance') {
+                document.getElementById('techPerformanceReportSection').style.display = 'block';
+            } else if (reportType === 'consumption') {
+                document.getElementById('consumptionReportSection').style.display = 'block';
+            }
+        }
+
+        // Load filters for reports
+        async function loadReportFilters() {
+            try {
+                const response = await apiFetch(`${API_BASE_URL}/business-units`);
+                const data = await response.json();
+                const businessUnits = Array.isArray(data) ? data : (data.data || []);
+                
+                // Populate BU dropdowns
+                const buSelects = [
+                    'assetsReportBU',
+                    'partsReportBU',
+                    'crossBUReportBUs',
+                    'consumptionReportBU',
+                    'techPerfReportBU'
+                ];
+                
+                buSelects.forEach(selectId => {
+                    const select = document.getElementById(selectId);
+                    if (select) {
+                        const isMultiple = select.hasAttribute('multiple');
+                        if (isMultiple) {
+                            select.innerHTML = '<option value="all">🌐 All Business Units</option>';
+                        } else {
+                            select.innerHTML = '<option value="all">All Business Units</option>';
+                        }
+                        businessUnits.forEach(bu => {
+                            const option = document.createElement('option');
+                            option.value = bu.id;
+                            option.textContent = `${bu.name} ${bu.code ? `(${bu.code})` : ''}`;
+                            select.appendChild(option);
+                        });
+                    }
+                });
+                
+                // Load locations for filters
+                const locResponse = await apiFetch(`${API_BASE_URL}/locations`);
+                const locData = await locResponse.json();
+                const locations = Array.isArray(locData) ? locData : (locData.data || []);
+                
+                const locSelects = ['assetsReportLocation', 'partsReportLocation', 'techPerfReportLocation'];
+                locSelects.forEach(selectId => {
+                    const select = document.getElementById(selectId);
+                    if (select) {
+                        const isMultiple = select.hasAttribute('multiple');
+                        select.innerHTML = isMultiple ? '<option value="all">🌐 All Locations</option>' : '<option value="all">All Locations</option>';
+                        locations.forEach(loc => {
+                            const option = document.createElement('option');
+                            option.value = loc.id;
+                            option.textContent = `${loc.name} - ${loc.business_unit_name || ''}`;
+                            select.appendChild(option);
+                        });
+                    }
+                });
+                
+                // Set default dates
+                const today = new Date();
+                const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+                document.getElementById('crossBUStartDate').value = firstDay.toISOString().split('T')[0];
+                document.getElementById('crossBUEndDate').value = today.toISOString().split('T')[0];
+                document.getElementById('consumptionStartDate').value = firstDay.toISOString().split('T')[0];
+                document.getElementById('consumptionEndDate').value = today.toISOString().split('T')[0];
+                if (document.getElementById('techPerfStartDate')) document.getElementById('techPerfStartDate').value = firstDay.toISOString().split('T')[0];
+                if (document.getElementById('techPerfEndDate')) document.getElementById('techPerfEndDate').value = today.toISOString().split('T')[0];
+                
+            } catch (error) {
+                console.error('Error loading report filters:', error);
+            }
+        }
+
+        // Load Technician Performance Report (Super Admin)
+        let lastTechPerformanceData = null;
+        async function loadTechPerformanceReport() {
+            try {
+                const bu = document.getElementById('techPerfReportBU')?.value;
+                const loc = document.getElementById('techPerfReportLocation')?.value;
+                const startDate = document.getElementById('techPerfStartDate')?.value;
+                const endDate = document.getElementById('techPerfEndDate')?.value;
+
+                const params = new URLSearchParams();
+                if (bu && bu !== 'all') params.append('business_unit_id', bu);
+                if (loc && loc !== 'all') params.append('location_id', loc);
+                if (startDate) params.append('start_date', startDate);
+                if (endDate) params.append('end_date', endDate);
+
+                const response = await apiFetch(`${API_BASE_URL}/reports/technician-performance?${params.toString()}`);
+                const data = await response.json();
+
+                if (!response.ok) {
+                    alert('Error generating report: ' + (data.error?.message || 'Unknown error'));
+                    return;
+                }
+
+                lastTechPerformanceData = data;
+                document.getElementById('techPerfSummaryCards').style.display = 'grid';
+                document.getElementById('techPerfTotalTechs').textContent = data.summary?.total_technicians || 0;
+                document.getElementById('techPerfTotalJobs').textContent = data.summary?.total_job_cards || 0;
+                document.getElementById('techPerfCompletedJobs').textContent = data.summary?.completed_job_cards || 0;
+                document.getElementById('techPerfTotalHours').textContent = (data.summary?.total_hours || 0).toLocaleString('en-US', { maximumFractionDigits: 1 }) + 'h';
+
+                const rows = data.data || [];
+                if (rows.length === 0) {
+                    document.getElementById('techPerfTable').innerHTML = '<p>No technician data found for the selected filters.</p>';
+                    return;
+                }
+
+                let html = '<div style="overflow-x:auto;"><table style="width:100%;"><thead><tr>';
+                html += '<th>Business Unit</th><th>Location</th><th>Technician</th><th>Employee Code</th><th>Total Jobs</th><th>Completed</th><th>Total Hours</th><th>Avg Hours/Job</th>';
+                html += '</tr></thead><tbody>';
+                rows.forEach(r => {
+                    html += `<tr>
+                        <td>${r.business_unit_name || '-'}</td>
+                        <td>${r.location_name || '-'}</td>
+                        <td>${r.technician_name || '-'}</td>
+                        <td>${r.employee_code || '-'}</td>
+                        <td>${r.total_job_cards || 0}</td>
+                        <td>${r.completed_job_cards || 0}</td>
+                        <td>${(parseFloat(r.total_hours) || 0).toLocaleString('en-US', { maximumFractionDigits: 1 })}</td>
+                        <td>${(parseFloat(r.avg_hours_per_job) || 0).toLocaleString('en-US', { maximumFractionDigits: 2 })}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table></div>';
+                document.getElementById('techPerfTable').innerHTML = html;
+
+                alert('Technician Performance Report generated successfully!');
+            } catch (error) {
+                console.error('Error loading technician performance report:', error);
+                alert('Error loading report: ' + error.message);
+            }
+        }
+
+        function exportTechPerformanceReport() {
+            if (!lastTechPerformanceData || !lastTechPerformanceData.data || lastTechPerformanceData.data.length === 0) {
+                alert('Please generate the report first before exporting.');
+                return;
+            }
+            try {
+                const wb = XLSX.utils.book_new();
+                const wsData = [
+                    ['Business Unit', 'Location', 'Technician', 'Employee Code', 'Total Jobs', 'Completed Jobs', 'Total Hours', 'Avg Hours/Job']
+                ];
+                lastTechPerformanceData.data.forEach(r => {
+                    wsData.push([
+                        r.business_unit_name || '',
+                        r.location_name || '',
+                        r.technician_name || '',
+                        r.employee_code || '',
+                        r.total_job_cards || 0,
+                        r.completed_job_cards || 0,
+                        parseFloat(r.total_hours || 0),
+                        parseFloat(r.avg_hours_per_job || 0)
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                XLSX.utils.book_append_sheet(wb, ws, 'Technician Performance');
+                XLSX.writeFile(wb, `Technician_Performance_${new Date().toISOString().split('T')[0]}.xlsx`);
+                alert('✓ Excel file downloaded successfully!');
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Export failed: ' + error.message);
+            }
+        }
+
+        // Load Assets Inventory Report
+        async function loadAssetsInventoryReport() {
+            try {
+                const buSelect = document.getElementById('assetsReportBU');
+                const locSelect = document.getElementById('assetsReportLocation');
+                const typeFilter = document.getElementById('assetsReportType').value;
+                const statusFilter = document.getElementById('assetsReportStatus').value;
+                
+                // Get selected BUs
+                const selectedBUs = Array.from(buSelect.selectedOptions)
+                    .map(opt => opt.value)
+                    .filter(val => val !== 'all');
+                const buIds = selectedBUs.length > 0 ? selectedBUs.join(',') : 'all';
+                
+                // Get selected Locations
+                const selectedLocs = Array.from(locSelect.selectedOptions)
+                    .map(opt => opt.value)
+                    .filter(val => val !== 'all');
+                const locIds = selectedLocs.length > 0 ? selectedLocs.join(',') : 'all';
+                
+                const params = new URLSearchParams();
+                params.append('business_unit_ids', buIds);
+                params.append('location_ids', locIds);
+                if (typeFilter) params.append('asset_type', typeFilter);
+                if (statusFilter) params.append('status', statusFilter);
+                
+                const response = await apiFetch(`${API_BASE_URL}/reports/assets-inventory?${params.toString()}`);
+                const data = await response.json();
+                
+                if (response.ok && data) {
+                    // Save data for export
+                    lastAssetsData = data;
+                    
+                    // Show summary cards
+                    document.getElementById('assetsSummaryCards').style.display = 'grid';
+                    document.getElementById('assetsTotal').textContent = data.summary.total_assets || 0;
+                    document.getElementById('assetsTotalValue').textContent = '$' + (data.summary.total_asset_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+                    
+                    // Count by type
+                    const toolsCount = data.data.filter(a => a.asset_type === 'Service Tool').length;
+                    const vehiclesCount = data.data.filter(a => a.asset_type === 'Vehicle').length;
+                    document.getElementById('assetsToolsCount').textContent = toolsCount;
+                    document.getElementById('assetsVehiclesCount').textContent = vehiclesCount;
+                    
+                    // Show by BU
+                    if (data.summary.by_business_unit && data.summary.by_business_unit.length > 0) {
+                        document.getElementById('assetsByBU').style.display = 'block';
+                        let buHtml = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">';
+                        data.summary.by_business_unit.forEach(bu => {
+                            buHtml += `
+                                <div class="card">
+                                    <h3 style="color: #6f42c1; margin-bottom: 15px;">${bu.business_unit_name}</h3>
+                                    <div style="display: grid; gap: 10px;">
+                                        <div><strong>Assets:</strong> ${bu.asset_count}</div>
+                                        <div><strong>Value:</strong> $${(bu.total_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                        <div><strong>Parts Value:</strong> $${(bu.parts_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                        <div><strong>Total Jobs:</strong> ${bu.total_jobs}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        buHtml += '</div>';
+                        document.getElementById('assetsByBUContent').innerHTML = buHtml;
+                    }
+                    
+                    // Show data table
+                    if (data.data && data.data.length > 0) {
+                        document.getElementById('assetsDataTable').style.display = 'block';
+                        let tableHtml = '<table style="width: 100%; border-collapse: collapse;"><thead><tr>';
+                        tableHtml += '<th>Asset Name</th><th>Type</th><th>Asset Tag</th><th>Business Unit</th><th>Location</th><th>Status</th><th>Cost</th><th>Parts</th><th>Jobs</th>';
+                        tableHtml += '</tr></thead><tbody>';
+                        
+                        data.data.forEach(asset => {
+                            tableHtml += `
+                                <tr>
+                                    <td>${asset.name}</td>
+                                    <td>${asset.asset_type || '-'}</td>
+                                    <td>${asset.asset_tag || '-'}</td>
+                                    <td>${asset.business_unit_name || '-'}</td>
+                                    <td>${asset.location_name || '-'}</td>
+                                    <td><span class="badge ${asset.status === 'active' ? 'success' : asset.status === 'in_maintenance' ? 'warning' : 'danger'}">${asset.status}</span></td>
+                                    <td>$${(parseFloat(asset.cost) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                    <td>${asset.parts_count || 0}</td>
+                                    <td>${asset.total_jobs || 0}</td>
+                                </tr>
+                            `;
+                        });
+                        tableHtml += '</tbody></table>';
+                        document.getElementById('assetsDataTable').querySelector('div').innerHTML = tableHtml;
+                    }
+                    
+                    alert('Assets Inventory Report generated successfully!');
+                } else {
+                    alert('Error generating report: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error loading assets inventory report:', error);
+                alert('Error loading report: ' + error.message);
+            }
+        }
+
+        // Load Parts Inventory Report
+        async function loadPartsInventoryReport() {
+            try {
+                const buSelect = document.getElementById('partsReportBU');
+                const locSelect = document.getElementById('partsReportLocation');
+                const statusFilter = document.getElementById('partsReportStatus').value;
+                
+                const selectedBUs = Array.from(buSelect.selectedOptions)
+                    .map(opt => opt.value)
+                    .filter(val => val !== 'all');
+                const buIds = selectedBUs.length > 0 ? selectedBUs.join(',') : 'all';
+                
+                const selectedLocs = Array.from(locSelect.selectedOptions)
+                    .map(opt => opt.value)
+                    .filter(val => val !== 'all');
+                const locIds = selectedLocs.length > 0 ? selectedLocs.join(',') : 'all';
+                
+                const params = new URLSearchParams();
+                params.append('business_unit_ids', buIds);
+                params.append('location_ids', locIds);
+                if (statusFilter) params.append('status', statusFilter);
+                
+                const response = await apiFetch(`${API_BASE_URL}/reports/parts-inventory?${params.toString()}`);
+                const data = await response.json();
+                
+                if (response.ok && data) {
+                    // Save data for export
+                    lastPartsData = data;
+                    
+                    document.getElementById('partsSummaryCards').style.display = 'grid';
+                    document.getElementById('partsTotal').textContent = data.summary.total_parts || 0;
+                    document.getElementById('partsTotalValue').textContent = '$' + (data.summary.total_inventory_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+                    document.getElementById('partsUsedValue').textContent = '$' + (data.summary.total_used_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+                    document.getElementById('partsBUCount').textContent = (data.summary.by_business_unit || []).length;
+                    
+                    // Show by BU
+                    if (data.summary.by_business_unit && data.summary.by_business_unit.length > 0) {
+                        document.getElementById('partsByBU').style.display = 'block';
+                        let buHtml = '<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">';
+                        data.summary.by_business_unit.forEach(bu => {
+                            buHtml += `
+                                <div class="card">
+                                    <h3 style="color: #6f42c1; margin-bottom: 15px;">${bu.business_unit_name}</h3>
+                                    <div style="display: grid; gap: 10px;">
+                                        <div><strong>Parts:</strong> ${bu.parts_count}</div>
+                                        <div><strong>Inventory Value:</strong> $${(bu.total_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                        <div><strong>Used Value:</strong> $${(bu.total_used_cost || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</div>
+                                    </div>
+                                </div>
+                            `;
+                        });
+                        buHtml += '</div>';
+                        document.getElementById('partsByBUContent').innerHTML = buHtml;
+                    }
+                    
+                    // Show data table
+                    if (data.data && data.data.length > 0) {
+                        document.getElementById('partsDataTable').style.display = 'block';
+                        let tableHtml = '<table style="width: 100%;"><thead><tr>';
+                        tableHtml += '<th>Part Name</th><th>Part Number</th><th>Business Unit</th><th>Location</th><th>Status</th><th>Cost</th><th>Times Used</th><th>Total Used Cost</th>';
+                        tableHtml += '</tr></thead><tbody>';
+                        
+                        data.data.forEach(part => {
+                            tableHtml += `
+                                <tr>
+                                    <td>${part.name}</td>
+                                    <td>${part.part_number || '-'}</td>
+                                    <td>${part.business_unit_name || '-'}</td>
+                                    <td>${part.location_name || '-'}</td>
+                                    <td><span class="badge ${part.status === 'in_stock' ? 'success' : part.status === 'out_of_stock' ? 'danger' : 'warning'}">${part.status}</span></td>
+                                    <td>$${(parseFloat(part.cost) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                    <td>${part.total_used || 0}</td>
+                                    <td>$${(parseFloat(part.total_cost_used) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                </tr>
+                            `;
+                        });
+                        tableHtml += '</tbody></table>';
+                        document.getElementById('partsDataTable').querySelector('div').innerHTML = tableHtml;
+                    }
+                    
+                    alert('Parts Inventory Report generated successfully!');
+                } else {
+                    alert('Error generating report: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error loading parts inventory report:', error);
+                alert('Error loading report: ' + error.message);
+            }
+        }
+
+        // Load Cross-BU Comparison Report
+        async function loadCrossBUReport() {
+            try {
+                const buSelect = document.getElementById('crossBUReportBUs');
+                const startDate = document.getElementById('crossBUStartDate').value;
+                const endDate = document.getElementById('crossBUEndDate').value;
+                
+                const selectedBUs = Array.from(buSelect.selectedOptions)
+                    .map(opt => opt.value)
+                    .filter(val => val !== 'all');
+                const buIds = selectedBUs.length > 0 ? selectedBUs.join(',') : 'all';
+                
+                const params = new URLSearchParams();
+                params.append('business_unit_ids', buIds);
+                if (startDate) params.append('start_date', startDate);
+                if (endDate) params.append('end_date', endDate);
+                
+                const response = await apiFetch(`${API_BASE_URL}/reports/cross-bu-comparison?${params.toString()}`);
+                const data = await response.json();
+                
+                if (response.ok && data) {
+                    // Save data for export
+                    lastCrossBUData = data;
+                    
+                    // Show overall summary
+                    document.getElementById('crossBUOverallSummary').style.display = 'block';
+                    document.getElementById('crossBUTotalAssets').textContent = data.overall_summary.total_assets || 0;
+                    document.getElementById('crossBUTotalAssetsValue').textContent = '$' + (data.overall_summary.total_asset_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+                    document.getElementById('crossBUTotalParts').textContent = data.overall_summary.total_parts || 0;
+                    document.getElementById('crossBUTotalPartsValue').textContent = '$' + (data.overall_summary.total_parts_value || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+                    document.getElementById('crossBUTotalJobs').textContent = data.overall_summary.total_jobs || 0;
+                    document.getElementById('crossBUCompletedJobs').textContent = data.overall_summary.completed_jobs || 0;
+                    document.getElementById('crossBUTotalHours').textContent = (data.overall_summary.total_hours || 0).toLocaleString('en-US', { maximumFractionDigits: 1 }) + 'h';
+                    
+                    // Show comparison table
+                    if (data.data && data.data.length > 0) {
+                        document.getElementById('crossBUComparisonTable').style.display = 'block';
+                        let tableHtml = '<table style="width: 100%;"><thead><tr>';
+                        tableHtml += '<th>Business Unit</th><th>Assets</th><th>Asset Value</th><th>Parts</th><th>Parts Value</th><th>Locations</th><th>Users</th><th>Technicians</th><th>Advisors</th><th>Total Jobs</th><th>Completed</th><th>Efficiency</th>';
+                        tableHtml += '</tr></thead><tbody>';
+                        
+                        data.data.forEach(bu => {
+                            const efficiency = bu.total_estimated_hours > 0 
+                                ? ((parseFloat(bu.total_hours) / parseFloat(bu.total_estimated_hours)) * 100).toFixed(1) + '%'
+                                : 'N/A';
+                            const completionRate = bu.total_jobs > 0
+                                ? ((parseInt(bu.completed_jobs) / parseInt(bu.total_jobs)) * 100).toFixed(1) + '%'
+                                : 'N/A';
+                                
+                            tableHtml += `
+                                <tr>
+                                    <td><strong>${bu.business_unit_name}</strong></td>
+                                    <td>${bu.total_assets || 0}</td>
+                                    <td>$${(parseFloat(bu.total_asset_value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                    <td>${bu.total_parts || 0}</td>
+                                    <td>$${(parseFloat(bu.total_parts_value) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                    <td>${bu.total_locations || 0}</td>
+                                    <td>${bu.total_users || 0}</td>
+                                    <td>${bu.technician_count || 0}</td>
+                                    <td>${bu.advisor_count || 0}</td>
+                                    <td>${bu.total_jobs || 0}</td>
+                                    <td>${bu.completed_jobs || 0} (${completionRate})</td>
+                                    <td>${efficiency}</td>
+                                </tr>
+                            `;
+                        });
+                        tableHtml += '</tbody></table>';
+                        document.getElementById('crossBUComparisonTable').querySelector('div').innerHTML = tableHtml;
+                    }
+                    
+                    alert('Cross-BU Comparison Report generated successfully!');
+                } else {
+                    alert('Error generating report: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error loading cross-BU report:', error);
+                alert('Error loading report: ' + error.message);
+            }
+        }
+
+        // Load Parts Consumption Report
+        async function loadConsumptionReport() {
+            try {
+                const buFilter = document.getElementById('consumptionReportBU').value;
+                const startDate = document.getElementById('consumptionStartDate').value;
+                const endDate = document.getElementById('consumptionEndDate').value;
+                
+                const params = new URLSearchParams();
+                if (buFilter && buFilter !== 'all') params.append('business_unit_id', buFilter);
+                if (startDate) params.append('start_date', startDate);
+                if (endDate) params.append('end_date', endDate);
+                
+                const response = await apiFetch(`${API_BASE_URL}/reports/parts-consumption?${params.toString()}`);
+                const data = await response.json();
+                
+                if (response.ok && data) {
+                    // Save data for export
+                    lastConsumptionData = data;
+                    
+                    document.getElementById('consumptionReportResults').style.display = 'block';
+                    
+                    if (data.summary) {
+                        document.getElementById('consumptionTotalParts').textContent = data.summary.total_parts_used || 0;
+                        document.getElementById('consumptionTotalCost').textContent = '$' + (data.summary.total_cost || 0).toLocaleString('en-US', { minimumFractionDigits: 2 });
+                        document.getElementById('consumptionWorkOrders').textContent = data.summary.work_orders_count || 0;
+                        
+                        const avgCost = data.summary.work_orders_count > 0 
+                            ? (data.summary.total_cost / data.summary.work_orders_count)
+                            : 0;
+                        document.getElementById('consumptionAvgCost').textContent = '$' + avgCost.toLocaleString('en-US', { minimumFractionDigits: 2 });
+                    }
+                    
+                    // Show data table
+                    if (data.data && data.data.length > 0) {
+                        let tableHtml = '<table style="width: 100%;"><thead><tr>';
+                        tableHtml += '<th>Part Name</th><th>Part Number</th><th>Asset</th><th>Location</th><th>Quantity Used</th><th>Avg Unit Cost</th><th>Total Cost</th><th>Work Orders</th>';
+                        tableHtml += '</tr></thead><tbody>';
+                        
+                        data.data.forEach(part => {
+                            tableHtml += `
+                                <tr>
+                                    <td>${part.name}</td>
+                                    <td>${part.part_number || '-'}</td>
+                                    <td>${part.parent_asset_name || '-'}</td>
+                                    <td>${part.location_name || '-'}</td>
+                                    <td>${part.total_quantity_used || 0}</td>
+                                    <td>$${(parseFloat(part.avg_unit_cost) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                    <td>$${(parseFloat(part.total_cost) || 0).toLocaleString('en-US', { minimumFractionDigits: 2 })}</td>
+                                    <td>${part.work_orders_count || 0}</td>
+                                </tr>
+                            `;
+                        });
+                        tableHtml += '</tbody></table>';
+                        document.getElementById('consumptionDataTable').innerHTML = tableHtml;
+                    } else {
+                        document.getElementById('consumptionDataTable').innerHTML = '<p>No parts consumption data found for the selected period.</p>';
+                    }
+                    
+                    alert('Parts Consumption Report generated successfully!');
+                } else {
+                    alert('Error generating report: ' + (data.error?.message || 'Unknown error'));
+                }
+            } catch (error) {
+                console.error('Error loading consumption report:', error);
+                alert('Error loading report: ' + error.message);
+            }
+        }
+
+        // Excel Export Functions - FULLY IMPLEMENTED
+        let lastAssetsData = null;
+        let lastPartsData = null;
+        let lastCrossBUData = null;
+        let lastConsumptionData = null;
+
+        function exportAssetsReport() {
+            if (!lastAssetsData || !lastAssetsData.data || lastAssetsData.data.length === 0) {
+                alert('Please generate the report first before exporting.');
+                return;
+            }
+            try {
+                const wb = XLSX.utils.book_new();
+                const wsData = [
+                    ['Asset Name', 'Type', 'Asset Tag', 'Serial Number', 'Business Unit', 'Location', 'Status', 'Cost', 'Purchase Date', 'Manufacturer', 'Model']
+                ];
+                lastAssetsData.data.forEach(asset => {
+                    wsData.push([
+                        asset.name || '',
+                        asset.asset_type || '',
+                        asset.asset_tag || '',
+                        asset.serial_number || '',
+                        asset.business_unit_name || '',
+                        asset.location_name || '',
+                        asset.status || '',
+                        asset.cost || 0,
+                        asset.purchase_date || '',
+                        asset.manufacturer || '',
+                        asset.model || ''
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                XLSX.utils.book_append_sheet(wb, ws, 'Assets Inventory');
+                XLSX.writeFile(wb, `Assets_Inventory_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+                alert('✓ Excel file downloaded successfully!');
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Error exporting to Excel: ' + error.message);
+            }
+        }
+
+        function exportPartsReport() {
+            if (!lastPartsData || !lastPartsData.data || lastPartsData.data.length === 0) {
+                alert('Please generate the report first before exporting.');
+                return;
+            }
+            try {
+                const wb = XLSX.utils.book_new();
+                const wsData = [
+                    ['Part Name', 'Part Number', 'Business Unit', 'Location', 'Status', 'Cost', 'Manufacturer', 'Times Used', 'Total Used Cost']
+                ];
+                lastPartsData.data.forEach(part => {
+                    wsData.push([
+                        part.name || '',
+                        part.part_number || '',
+                        part.business_unit_name || '',
+                        part.location_name || '',
+                        part.status || '',
+                        part.cost || 0,
+                        part.manufacturer || '',
+                        part.total_used || 0,
+                        part.total_cost_used || 0
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                XLSX.utils.book_append_sheet(wb, ws, 'Parts Inventory');
+                XLSX.writeFile(wb, `Parts_Inventory_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+                alert('✓ Excel file downloaded successfully!');
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Error exporting to Excel: ' + error.message);
+            }
+        }
+
+        function exportCrossBUReport() {
+            if (!lastCrossBUData || !lastCrossBUData.data || lastCrossBUData.data.length === 0) {
+                alert('Please generate the report first before exporting.');
+                return;
+            }
+            try {
+                const wb = XLSX.utils.book_new();
+                const wsData = [
+                    ['Business Unit', 'Assets', 'Asset Value', 'Parts', 'Parts Value', 'Locations', 'Users', 'Technicians', 'Advisors', 'Total Jobs', 'Completed Jobs', 'Completion %', 'Total Hours', 'Efficiency']
+                ];
+                lastCrossBUData.data.forEach(bu => {
+                    const completionRate = bu.total_jobs > 0 ? ((parseInt(bu.completed_jobs) / parseInt(bu.total_jobs)) * 100).toFixed(1) : 0;
+                    const efficiency = bu.total_estimated_hours > 0 ? ((parseFloat(bu.total_hours) / parseFloat(bu.total_estimated_hours)) * 100).toFixed(1) : 0;
+                    wsData.push([
+                        bu.business_unit_name || '',
+                        bu.total_assets || 0,
+                        parseFloat(bu.total_asset_value) || 0,
+                        bu.total_parts || 0,
+                        parseFloat(bu.total_parts_value) || 0,
+                        bu.total_locations || 0,
+                        bu.total_users || 0,
+                        bu.technician_count || 0,
+                        bu.advisor_count || 0,
+                        bu.total_jobs || 0,
+                        bu.completed_jobs || 0,
+                        completionRate + '%',
+                        parseFloat(bu.total_hours) || 0,
+                        efficiency + '%'
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                XLSX.utils.book_append_sheet(wb, ws, 'Cross-BU Comparison');
+                XLSX.writeFile(wb, `CrossBU_Comparison_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+                alert('✓ Excel file downloaded successfully!');
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Error exporting to Excel: ' + error.message);
+            }
+        }
+
+        function exportConsumptionReport() {
+            if (!lastConsumptionData || !lastConsumptionData.data || lastConsumptionData.data.length === 0) {
+                alert('Please generate the report first before exporting.');
+                return;
+            }
+            try {
+                const wb = XLSX.utils.book_new();
+                const wsData = [
+                    ['Part Name', 'Part Number', 'Asset', 'Location', 'Quantity Used', 'Avg Unit Cost', 'Total Cost', 'Work Orders']
+                ];
+                lastConsumptionData.data.forEach(part => {
+                    wsData.push([
+                        part.name || '',
+                        part.part_number || '',
+                        part.parent_asset_name || '',
+                        part.location_name || '',
+                        part.total_quantity_used || 0,
+                        parseFloat(part.avg_unit_cost) || 0,
+                        parseFloat(part.total_cost) || 0,
+                        part.work_orders_count || 0
+                    ]);
+                });
+                const ws = XLSX.utils.aoa_to_sheet(wsData);
+                XLSX.utils.book_append_sheet(wb, ws, 'Parts Consumption');
+                XLSX.writeFile(wb, `Parts_Consumption_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+                alert('✓ Excel file downloaded successfully!');
+            } catch (error) {
+                console.error('Export error:', error);
+                alert('Error exporting to Excel: ' + error.message);
+            }
+        }
+
+        // Load data on page load
+        loadDashboardData();
+        loadBusinessUnitsForDropdown();
+        loadLocationsForDropdown();
+    </script>
+</body>
+</html>
+
