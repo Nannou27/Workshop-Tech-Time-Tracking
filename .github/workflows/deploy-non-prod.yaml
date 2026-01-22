@@ -1,0 +1,108 @@
+name: NON-PROD - Workshop Time Tracking – Deploy
+
+on:
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - src/**
+  #     - Dockerfile
+  #     - package.json
+  #     - server.js
+  workflow_dispatch: # Manual trigger only - comment out push to re-enable auto-deploy
+
+env:
+  AWS_REGION: ap-south-1
+  CLUSTER_NAME: legend-cluster
+  NAMESPACE: non-prod
+  ECR_REPOSITORY: workshop-time-tracking
+  ECR_REGISTRY: 149681870207.dkr.ecr.ap-south-1.amazonaws.com
+
+jobs:
+  build-and-deploy:
+    name: Build & Deploy Workshop Time Tracking (Non-Prod)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      # -------------------------
+      # Checkout source
+      # -------------------------
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # -------------------------
+      # AWS Auth (OIDC)
+      # -------------------------
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::149681870207:role/github-eks-ci
+          aws-region: ${{ env.AWS_REGION }}
+
+      # -------------------------
+      # ECR Login
+      # -------------------------
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # -------------------------
+      # Build & Push Docker Image
+      # -------------------------
+      - name: Build & Push Workshop Time Tracking Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          tags: |
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+            ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+
+      # -------------------------
+      # Kubernetes Access
+      # -------------------------
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig \
+            --region ${{ env.AWS_REGION }} \
+            --name ${{ env.CLUSTER_NAME }}
+
+      # -------------------------
+      # Helm Setup
+      # -------------------------
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      # -------------------------
+      # Fetch Helm Templates
+      # -------------------------
+      - name: Checkout k8s-templates
+        uses: actions/checkout@v4
+        with:
+          repository: Legend-Holding/k8s-templates
+          path: k8s-templates
+          token: ${{ secrets.INFRA_REPO_TOKEN }}
+
+      # -------------------------
+      # Fetch Values
+      # -------------------------
+      - name: Checkout k8s-values
+        uses: actions/checkout@v4
+        with:
+          repository: Legend-Holding/k8s-values
+          path: k8s-values
+          token: ${{ secrets.INFRA_REPO_TOKEN }}
+
+      # -------------------------
+      # Deploy Workshop Time Tracking
+      # -------------------------
+      - name: Deploy workshop-time-tracking (Non-Prod)
+        run: |
+          helm upgrade --install workshop-time-tracking \
+            k8s-templates/charts/app-base \
+            -f k8s-values/workshop-time-tracking/non-prod.yaml \
+            --set image.tag=${{ github.sha }} \
+            -n ${{ env.NAMESPACE }} \
+            --create-namespace

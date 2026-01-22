@@ -100,7 +100,31 @@ const limiter = rateLimit({
 });
 app.use(`/api/${API_VERSION}/`, limiter);
 
-// Health check
+// Kubernetes Health Checks (public - no auth required)
+
+// Liveness probe - checks if app is running
+app.get('/healthz', (req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+// Readiness probe - checks if app is ready to receive traffic
+app.get('/readyz', async (req, res) => {
+  try {
+    await db.query('SELECT 1');
+    res.status(200).json({
+      status: 'ready',
+      database: 'connected'
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'not_ready',
+      database: 'disconnected',
+      error: error.message
+    });
+  }
+});
+
+// Legacy health check (combines liveness + readiness)
 app.get('/health', async (req, res) => {
   try {
     // Check database connection
