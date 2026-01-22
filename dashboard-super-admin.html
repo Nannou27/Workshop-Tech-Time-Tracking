@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <title>WTTT - Super Admin Dashboard</title>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <style>
@@ -1223,9 +1224,8 @@
 
     <script src="branding.js"></script>
     <script>
-        const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-            ? 'http://localhost:3000/api/v1'
-            : `http://${window.location.hostname}:3000/api/v1`;
+        const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const API_BASE_URL = isLocalDev ? 'http://localhost:3000/api/v1' : '/api/v1';
         let accessToken = localStorage.getItem('access_token');
         let refreshToken = localStorage.getItem('refresh_token');
         let user = JSON.parse(localStorage.getItem('user') || '{}');

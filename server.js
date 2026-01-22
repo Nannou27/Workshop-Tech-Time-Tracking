@@ -68,8 +68,8 @@ app.use(helmet({
       scriptSrcAttr: ["'unsafe-inline'", "'unsafe-hashes'"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
       imgSrc: ["'self'", "data:", "blob:"],
-      // Avoid hardcoding hosts; allow same-origin plus websocket schemes.
-      connectSrc: ["'self'", "ws:", "wss:"],
+      // Allow same-origin, websockets, and localhost for development
+      connectSrc: ["'self'", "ws:", "wss:", "http://localhost:3000", "http://127.0.0.1:3000"],
       fontSrc: ["'self'", "https://fonts.gstatic.com", "https://fonts.googleapis.com"],
       objectSrc: ["'none'"],
       upgradeInsecureRequests: null

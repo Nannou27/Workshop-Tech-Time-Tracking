@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/svg+xml" href="favicon.svg">
     <title>WTTT</title>
     <style>
         :root {
@@ -172,13 +173,11 @@
 
     <script>
         // Dynamically determine API URL based on current host
-        const API_BASE_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-            ? 'http://localhost:3000/api/v1'
-            : `http://${window.location.hostname}:3000/api/v1`;
-        
-        const HEALTH_URL = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-            ? 'http://localhost:3000/health'
-            : `http://${window.location.hostname}:3000/health`;
+        // Use relative URLs when deployed (load balancer proxies to backend)
+        // Use absolute localhost URLs for local development
+        const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const API_BASE_URL = isLocalDev ? 'http://localhost:3000/api/v1' : '/api/v1';
+        const HEALTH_URL = isLocalDev ? 'http://localhost:3000/health' : '/health';
         
         // Check API connection on load
         async function checkApiConnection() {

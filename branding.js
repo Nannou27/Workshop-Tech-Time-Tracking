@@ -3,7 +3,8 @@
 // - Applies CSS variables + logo + system name across pages
 
 (function () {
-  const API_BASE_URL = window.API_BASE_URL || '/api/v1';
+  const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const API_BASE_URL = window.API_BASE_URL || (isLocalDev ? 'http://localhost:3000/api/v1' : '/api/v1');
 
   function normalizeCurrencyCodeLike(v) { return v; } // placeholder to avoid accidental global collisions
 
