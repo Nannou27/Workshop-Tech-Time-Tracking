@@ -238,7 +238,7 @@ router.get('/technician/:technician_id', async (req, res, next) => {
       FROM job_history jh
       LEFT JOIN job_cards jc ON jh.work_order_id = jc.id
       LEFT JOIN users u ON jh.technician_id = u.id
-      WHERE jh.technician_id = ${placeholder}1
+      WHERE jh.technician_id = ${dbType === 'mysql' ? '?' : '$1'}
     `;
     const params = [technician_id];
     let paramCount = 1;

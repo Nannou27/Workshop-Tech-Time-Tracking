@@ -767,7 +767,7 @@ router.get('/:id/movements', async (req, res, next) => {
       LEFT JOIN locations from_loc ON am.from_location_id = from_loc.id
       LEFT JOIN locations to_loc ON am.to_location_id = to_loc.id
       LEFT JOIN users u ON am.moved_by = u.id
-      WHERE am.asset_id = ${placeholder}1
+      WHERE am.asset_id = ${dbType === 'mysql' ? '?' : '$1'}
     `;
     const params = [id];
     let paramCount = 1;
