@@ -625,7 +625,8 @@ router.get('/:id', async (req, res, next) => {
 router.post('/',
   [
     body('job_number').notEmpty().trim(),
-    body('customer_name').notEmpty().trim(),
+    // Customer/Company name should be optional (non-mandatory)
+    body('customer_name').optional({ checkFalsy: true }).trim().isLength({ max: 255 }),
     body('priority').optional().isInt({ min: 1, max: 5 })
   ],
   async (req, res, next) => {
@@ -659,6 +660,15 @@ router.post('/',
         metadata = {}
       } = req.body;
 
+      // Normalize optional fields so empty strings don't get treated as "required"
+      const normalizedCustomerName = (typeof customer_name === 'string' && customer_name.trim()) ? customer_name.trim() : null;
+      const normalizedWorkType = (typeof work_type === 'string' && work_type.trim()) ? work_type.trim() : null;
+      const normalizedProblemDescription = (typeof problem_description === 'string' && problem_description.trim()) ? problem_description.trim() : null;
+      const normalizedLocationId =
+        location_id === undefined || location_id === null || location_id === ''
+          ? null
+          : location_id;
+
       // Check if job number exists
       const dbType = process.env.DB_TYPE || 'postgresql';
       const placeholder = dbType === 'mysql' ? '?' : '$1';
@@ -672,6 +682,54 @@ router.post('/',
           error: {
             code: 'RESOURCE_CONFLICT',
             message: 'Job card with this number already exists'
+          }
+        });
+      }
+
+      // Enforce "required" only when BU explicitly sets is_required=true via field visibility.
+      // Default is non-mandatory when there is no field_visibility_settings row.
+      const requiredKeys = new Set();
+      try {
+        const userBuRes = await db.query(
+          `SELECT business_unit_id FROM users WHERE id = ${dbType === 'mysql' ? '?' : '$1'}`,
+          [req.user.id]
+        );
+        const buId = userBuRes.rows?.[0]?.business_unit_id;
+        if (buId) {
+          const buPh = dbType === 'mysql' ? '?' : '$1';
+          const reqRes = await db.query(
+            `SELECT section_name, field_name, is_required
+             FROM field_visibility_settings
+             WHERE business_unit_id = ${buPh}
+               AND (
+                 (section_name = 'customer_info' AND field_name = 'customer_name')
+                 OR (section_name = 'work_order_details' AND field_name = 'work_type')
+                 OR (section_name = 'work_order_details' AND field_name = 'problem_description')
+                 OR (section_name = 'location_assignment' AND field_name = 'location_id')
+               )`,
+            [buId]
+          );
+          (reqRes.rows || []).forEach(r => {
+            if (r.is_required) requiredKeys.add(`${r.section_name}.${r.field_name}`);
+          });
+        }
+      } catch (e) {
+        // If field visibility tables aren't installed yet, default to non-mandatory.
+        logger.warn('Could not evaluate BU required fields (defaulting to non-mandatory):', e);
+      }
+
+      const missing = [];
+      if (requiredKeys.has('customer_info.customer_name') && !normalizedCustomerName) missing.push('Company Name');
+      if (requiredKeys.has('work_order_details.work_type') && !normalizedWorkType) missing.push('Work Type');
+      if (requiredKeys.has('work_order_details.problem_description') && !normalizedProblemDescription) missing.push('Complaint / Rider Issue');
+      if (requiredKeys.has('location_assignment.location_id') && !normalizedLocationId) missing.push('Location');
+
+      if (missing.length) {
+        return res.status(400).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Validation failed',
+            details: missing.map(field => ({ field, msg: `${field} is required` }))
           }
         });
       }
@@ -694,11 +752,11 @@ router.post('/',
       }
       
       // Validate location_id if provided
-      if (location_id) {
+      if (normalizedLocationId) {
         const locPlaceholder = dbType === 'mysql' ? '?' : '$1';
         const locCheck = await db.query(
           `SELECT id FROM locations WHERE id = ${locPlaceholder}`,
-          [location_id]
+          [normalizedLocationId]
         );
         if (locCheck.rows.length === 0) {
           return res.status(400).json({
@@ -760,14 +818,14 @@ router.post('/',
       
       // Normalize metadata and capture optional work order details
       const normalizedMetadata = (metadata && typeof metadata === 'object') ? { ...metadata } : {};
-      if (problem_description) {
+      if (normalizedProblemDescription) {
         if (!normalizedMetadata.work_order_details || typeof normalizedMetadata.work_order_details !== 'object') {
           normalizedMetadata.work_order_details = {};
         }
-        normalizedMetadata.work_order_details.problem_description = String(problem_description);
+        normalizedMetadata.work_order_details.problem_description = String(normalizedProblemDescription);
         // Keep a dedicated complaint field too (new UI uses this concept)
         if (!normalizedMetadata.work_order_details.complaint) {
-          normalizedMetadata.work_order_details.complaint = String(problem_description);
+          normalizedMetadata.work_order_details.complaint = String(normalizedProblemDescription);
         }
       }
       if (bike_condition_review) {
@@ -807,13 +865,13 @@ router.post('/',
         const insertParams = buColumnExists
           ? [
               job_number,
-              customer_name,
+              normalizedCustomerName,
               JSON.stringify(vehicle_info || {}),
-              work_type,
+              normalizedWorkType,
               priority,
               estimated_hours,
               asset_id || null,
-              location_id || null,
+              normalizedLocationId,
               job_type || null,
               resolvedParentWorkOrderId || null,
               businessUnitIdForInsert,
@@ -822,13 +880,13 @@ router.post('/',
             ]
           : [
               job_number,
-              customer_name,
+              normalizedCustomerName,
               JSON.stringify(vehicle_info || {}),
-              work_type,
+              normalizedWorkType,
               priority,
               estimated_hours,
               asset_id || null,
-              location_id || null,
+              normalizedLocationId,
               job_type || null,
               resolvedParentWorkOrderId || null,
               req.user.id,
@@ -858,13 +916,13 @@ router.post('/',
         const insertParams = buColumnExists
           ? [
               job_number,
-              customer_name,
+              normalizedCustomerName,
               JSON.stringify(vehicle_info || {}),
-              work_type,
+              normalizedWorkType,
               priority,
               estimated_hours,
               asset_id || null,
-              location_id || null,
+              normalizedLocationId,
               job_type || null,
               resolvedParentWorkOrderId || null,
               businessUnitIdForInsert,
@@ -873,13 +931,13 @@ router.post('/',
             ]
           : [
               job_number,
-              customer_name,
+              normalizedCustomerName,
               JSON.stringify(vehicle_info || {}),
-              work_type,
+              normalizedWorkType,
               priority,
               estimated_hours,
               asset_id || null,
-              location_id || null,
+              normalizedLocationId,
               job_type || null,
               resolvedParentWorkOrderId || null,
               req.user.id,
@@ -914,8 +972,9 @@ router.patch('/:id',
   [
     body('status').optional().isIn(['open', 'in_progress', 'on_hold', 'completed', 'cancelled']),
     body('priority').optional().isInt({ min: 1, max: 5 }),
-    body('customer_name').optional().trim().isLength({ min: 1, max: 255 }),
-    body('work_type').optional().trim().isLength({ min: 1, max: 255 }),
+    // Allow clearing these fields (non-mandatory)
+    body('customer_name').optional({ checkFalsy: true }).trim().isLength({ max: 255 }),
+    body('work_type').optional({ checkFalsy: true }).trim().isLength({ max: 255 }),
     body('estimated_hours').optional({ nullable: true }).isFloat({ min: 0 }),
     body('problem_description').optional({ nullable: true }).trim(),
     body('bike_condition_review').optional({ nullable: true }).trim(),

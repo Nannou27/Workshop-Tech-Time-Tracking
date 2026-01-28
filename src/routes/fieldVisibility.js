@@ -215,6 +215,15 @@ router.get('/sections', async (req, res, next) => {
   }
 });
 
+// These fields should be non-mandatory by default, but BU Admins can explicitly mark them required.
+// We only override the *default* (when there is no BU-specific visibility setting row).
+const DEFAULT_NON_REQUIRED = new Set([
+  'customer_info.customer_name',              // "Company Name"
+  'work_order_details.work_type',             // "Work Type"
+  'work_order_details.problem_description',   // "Complaint / Rider Issue"
+  'location_assignment.location_id'           // "Location"
+]);
+
 // GET /api/v1/field-visibility/:business_unit_id
 // Get field visibility settings for a specific Business Unit
 router.get('/:business_unit_id', async (req, res, next) => {
@@ -267,7 +276,8 @@ router.get('/:business_unit_id', async (req, res, next) => {
         v => v.section_name === ref.section_name && v.field_name === ref.field_name
       );
 
-      sections[ref.section_name].fields.push({
+      const fieldKey = `${ref.section_name}.${ref.field_name}`;
+      const merged = {
         field_name: ref.field_name,
         field_display_name: visibility?.custom_label || ref.field_display_name,
         field_type: ref.field_type,
@@ -278,7 +288,14 @@ router.get('/:business_unit_id', async (req, res, next) => {
         custom_help_text: visibility?.custom_help_text || ref.help_text,
         validation_rules: typeof ref.validation_rules === 'string' ? JSON.parse(ref.validation_rules) : ref.validation_rules,
         options: typeof ref.options === 'string' ? JSON.parse(ref.options) : ref.options
-      });
+      };
+
+      // Default required=false for selected fields, unless BU explicitly overrides via field_visibility_settings.
+      if (!visibility && DEFAULT_NON_REQUIRED.has(fieldKey)) {
+        merged.is_required = false;
+      }
+
+      sections[ref.section_name].fields.push(merged);
     });
 
     res.json({
