@@ -663,6 +663,36 @@ router.post('/start-break', async (req, res, next) => {
       });
     }
 
+    // AUTO-PAUSE active job timers to prevent break time from being counted as worked time.
+    // Breaks are non-work time; job timers must not run during breaks.
+    const activePh = dbType === 'mysql' ? '?' : '$1';
+    const activeTimeLogs = await db.query(
+      `SELECT id FROM time_logs WHERE technician_id = ${activePh} AND status = 'active'`,
+      [req.user.id]
+    );
+    
+    if (activeTimeLogs.rows && activeTimeLogs.rows.length > 0) {
+      const nowIso = now.toISOString();
+      const endTsVal = dbType === 'mysql' ? '?' : 'NOW()';
+      const statusVal = dbType === 'mysql' ? '?' : `'paused'`;
+      const idsPh = dbType === 'mysql' ? '?' : '$1';
+      
+      for (const log of activeTimeLogs.rows) {
+        if (dbType === 'mysql') {
+          await db.query(
+            `UPDATE time_logs SET end_ts = ?, status = 'paused' WHERE id = ?`,
+            [nowIso, log.id]
+          );
+        } else {
+          await db.query(
+            `UPDATE time_logs SET end_ts = NOW(), status = 'paused' WHERE id = $1`,
+            [log.id]
+          );
+        }
+      }
+      logger.info(`Auto-paused ${activeTimeLogs.rows.length} active timer(s) for technician ${req.user.id} (break started)`);
+    }
+
     // Persist break start time; if schema doesn't have a break_start_time column, store in notes JSON.
     if (dbType === 'mysql') {
       if (hasBreakStartColumn) {

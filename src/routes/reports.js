@@ -2810,9 +2810,25 @@ router.get('/technician-efficiency',
                   END
                 ELSE 0
               END
-            ), 0) / 3600.0 as total_worked_hours
-          FROM time_logs
-          WHERE DATE(start_ts) >= ${p(rangeStartDay)} AND DATE(start_ts) <= ${p(rangeEndDay)}
+            ), 0) / 3600.0 as total_worked_hours,
+            COALESCE(SUM(
+              CASE
+                WHEN status IN ('finished','paused') THEN
+                  CASE
+                    WHEN duration_seconds > 0 THEN duration_seconds
+                    WHEN end_ts IS NOT NULL THEN ${dbType === 'mysql' ? 'TIMESTAMPDIFF(SECOND, start_ts, end_ts)' : "EXTRACT(EPOCH FROM (end_ts - start_ts))"}
+                    ELSE 0
+                  END
+                ELSE 0
+              END
+            ), 0) / 3600.0 as worked_hours_completed_only
+          FROM time_logs tl_inner
+          WHERE DATE(tl_inner.start_ts) >= ${p(rangeStartDay)} AND DATE(tl_inner.start_ts) <= ${p(rangeEndDay)}
+            AND EXISTS (
+              SELECT 1 FROM assignments a_inner
+              WHERE a_inner.id = tl_inner.assignment_id
+                AND a_inner.status = 'completed'
+            )
           GROUP BY technician_id
         ) tl ON tl.technician_id = t.user_id
         ${hasShiftsTable ? `LEFT JOIN (
@@ -2851,7 +2867,7 @@ router.get('/technician-efficiency',
             ELSE 0
           END as productivity_percent,
           CASE WHEN base.completed_jobs > 0
-            THEN ROUND((base.total_worked_hours / base.completed_jobs), 2)
+            THEN ROUND((base.worked_hours_completed_only / base.completed_jobs), 2)
             ELSE 0
           END as avg_hours_per_job
         FROM (${baseQuery}) base
@@ -2875,7 +2891,8 @@ router.get('/technician-efficiency',
           const source = usePlanned ? (plannedHours > 0 ? 'planned' : 'none') : 'actual';
           const productivity = effectiveShift > 0 ? Number(((worked / effectiveShift) * 100).toFixed(2)) : 0;
           const efficiency = worked > 0 ? Number(((billed / worked) * 100).toFixed(2)) : 0;
-          const avgPerJob = completed > 0 ? Number((worked / completed).toFixed(2)) : 0;
+          const workedCompleted = parseFloat(r.worked_hours_completed_only || 0) || 0;
+          const avgPerJob = completed > 0 ? Number((workedCompleted / completed).toFixed(2)) : 0;
           const revenueEfficiency = effectiveShift > 0 ? Number(((billed / effectiveShift) * 100).toFixed(2)) : 0;
           const missingEstimate = !(billed > 0) && completed > 0;
           return {
