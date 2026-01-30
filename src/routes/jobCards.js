@@ -649,6 +649,7 @@ router.post('/',
         work_type,
         priority = 3,
         estimated_hours,
+        estimated_minutes,
         asset_id,
         location_id,
         job_type,
@@ -659,6 +660,32 @@ router.post('/',
         previous_job_number,
         metadata = {}
       } = req.body;
+
+      // Normalize estimated duration: accept minutes or hours, store as hours (backward compatible)
+      let normalizedEstimatedHours = null;
+      if (estimated_minutes != null && estimated_minutes !== '') {
+        const min = parseFloat(estimated_minutes);
+        if (min < 0) {
+          return res.status(400).json({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Estimated minutes must be non-negative'
+            }
+          });
+        }
+        normalizedEstimatedHours = min / 60;
+      } else if (estimated_hours != null && estimated_hours !== '') {
+        const hrs = parseFloat(estimated_hours);
+        if (hrs < 0) {
+          return res.status(400).json({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Estimated hours must be non-negative'
+            }
+          });
+        }
+        normalizedEstimatedHours = hrs;
+      }
 
       // Normalize optional fields so empty strings don't get treated as "required"
       const normalizedCustomerName = (typeof customer_name === 'string' && customer_name.trim()) ? customer_name.trim() : null;
@@ -920,7 +947,7 @@ router.post('/',
               JSON.stringify(vehicle_info || {}),
               normalizedWorkType,
               priority,
-              estimated_hours,
+              normalizedEstimatedHours,
               asset_id || null,
               normalizedLocationId,
               job_type || null,
@@ -935,7 +962,7 @@ router.post('/',
               JSON.stringify(vehicle_info || {}),
               normalizedWorkType,
               priority,
-              estimated_hours,
+              normalizedEstimatedHours,
               asset_id || null,
               normalizedLocationId,
               job_type || null,
@@ -1053,6 +1080,7 @@ router.patch('/:id',
         vehicle_info,
         work_type,
         estimated_hours,
+        estimated_minutes,
         asset_id,
         location_id,
         job_type,
@@ -1063,6 +1091,32 @@ router.patch('/:id',
         job_category,
         previous_job_number
       } = req.body;
+
+      // Normalize estimated duration for PATCH (same logic as POST)
+      let normalizedEstimatedHours = undefined;
+      if (estimated_minutes !== undefined && estimated_minutes !== null && estimated_minutes !== '') {
+        const min = parseFloat(estimated_minutes);
+        if (min < 0) {
+          return res.status(400).json({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Estimated minutes must be non-negative'
+            }
+          });
+        }
+        normalizedEstimatedHours = min / 60;
+      } else if (estimated_hours !== undefined && estimated_hours !== null && estimated_hours !== '') {
+        const hrs = parseFloat(estimated_hours);
+        if (hrs < 0) {
+          return res.status(400).json({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Estimated hours must be non-negative'
+            }
+          });
+        }
+        normalizedEstimatedHours = hrs;
+      }
 
       const updates = [];
       const params = [];
@@ -1110,11 +1164,11 @@ router.patch('/:id',
         params.push(work_type);
       }
 
-      if (estimated_hours !== undefined) {
+      if (normalizedEstimatedHours !== undefined) {
         paramCount++;
         const ph = dbType === 'mysql' ? '?' : `$${paramCount}`;
         updates.push(`estimated_hours = ${ph}`);
-        params.push(estimated_hours);
+        params.push(normalizedEstimatedHours);
       }
 
       if (asset_id !== undefined) {

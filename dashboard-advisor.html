@@ -872,8 +872,15 @@
                                     </select>
                                 </div>
                                 <div class="form-group">
-                                    <label for="estimated_hours">Estimated Hours</label>
-                                    <input type="number" id="estimated_hours" name="estimated_hours" step="0.5" min="0" placeholder="e.g., 1.5">
+                                    <label for="estimated_duration">Estimated Duration</label>
+                                    <div style="display: flex; gap: 10px; align-items: center;">
+                                        <input type="number" id="estimated_duration" name="estimated_duration" step="1" min="0" placeholder="e.g., 15" style="flex: 1;">
+                                        <select id="estimated_duration_unit" name="estimated_duration_unit" style="width: 120px;">
+                                            <option value="minutes" selected>Minutes</option>
+                                            <option value="hours">Hours</option>
+                                        </select>
+                                    </div>
+                                    <small style="color: #666; display: block; margin-top: 5px;">Enter estimated time to complete this job</small>
                                 </div>
                             </div>
                         </div>
@@ -3368,6 +3375,8 @@
                 'job_category': 'work_order_details.job_category',
                 'previous_job_number': 'work_order_details.previous_job_number',
                 'estimated_hours': 'work_order_details.estimated_hours',
+                'estimated_duration': 'work_order_details.estimated_hours',
+                'estimated_duration_unit': 'work_order_details.estimated_hours',
                 'priority': 'work_order_details.priority',
                 'notes': 'work_order_details.notes',
                 'location_id': 'location_assignment.location_id'
@@ -3598,7 +3607,23 @@
 
                 // Priority / estimate
                 if (document.getElementById('priority') && job.priority) document.getElementById('priority').value = String(job.priority);
-                if (document.getElementById('estimated_hours')) document.getElementById('estimated_hours').value = job.estimated_hours != null ? String(job.estimated_hours) : '';
+                
+                // Populate estimated duration (convert hours → duration + unit)
+                if (document.getElementById('estimated_duration')) {
+                    if (job.estimated_hours != null && parseFloat(job.estimated_hours) > 0) {
+                        const hours = parseFloat(job.estimated_hours);
+                        // If < 1 hour, show in minutes; otherwise show in hours
+                        if (hours < 1) {
+                            document.getElementById('estimated_duration').value = String(Math.round(hours * 60));
+                            if (document.getElementById('estimated_duration_unit')) document.getElementById('estimated_duration_unit').value = 'minutes';
+                        } else {
+                            document.getElementById('estimated_duration').value = String(hours);
+                            if (document.getElementById('estimated_duration_unit')) document.getElementById('estimated_duration_unit').value = 'hours';
+                        }
+                    } else {
+                        document.getElementById('estimated_duration').value = '';
+                    }
+                }
 
                 // Location / asset / job_type / parent link
                 if (document.getElementById('location_id')) document.getElementById('location_id').value = job.location_id || '';
@@ -3754,7 +3779,6 @@
                         ? (getVal('job_category') || 'service')
                         : undefined,
                     priority: parseInt(getVal('priority') || '3', 10),
-                    estimated_hours: getVal('estimated_hours') ? parseFloat(getVal('estimated_hours')) : null,
                     location_id: getVal('location_id') || null,
                     job_type: getVal('job_type') || null,
                     asset_id: getVal('asset_id') || null,
@@ -3764,6 +3788,16 @@
                         : undefined,
                     notes: getTrim('notes') || null
                 };
+
+                // Convert estimated duration + unit to estimated_hours (backward compatible)
+                const duration = getVal('estimated_duration');
+                const unit = getVal('estimated_duration_unit') || 'minutes';
+                if (duration && parseFloat(duration) > 0) {
+                    const val = parseFloat(duration);
+                    formData.estimated_hours = unit === 'hours' ? val : (val / 60);
+                } else {
+                    formData.estimated_hours = null;
+                }
 
                 // Add customer fields if visible
                 if (document.getElementById('customer_email') && isGroupVisible('customer_email')) formData.customer_email = getTrim('customer_email') || null;
