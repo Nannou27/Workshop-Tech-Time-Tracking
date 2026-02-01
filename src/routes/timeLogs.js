@@ -10,6 +10,20 @@ const router = express.Router();
 // All routes require authentication
 router.use(authenticate);
 
+// Helper function to check if table exists
+async function tableExists(tableName) {
+  try {
+    const dbType = process.env.DB_TYPE || 'postgresql';
+    const checkQuery = dbType === 'mysql'
+      ? `SHOW TABLES LIKE '${tableName}'`
+      : `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '${tableName}') as exists`;
+    const result = await db.query(checkQuery);
+    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+  } catch (error) {
+    return false;
+  }
+}
+
 // GET /api/v1/timelogs
 router.get('/', async (req, res, next) => {
   try {
@@ -145,6 +159,27 @@ router.post('/start',
             message: 'Assignment does not belong to this technician'
           }
         });
+      }
+
+      // ENFORCE: Technician must be clocked in before starting a job timer.
+      // This ensures all worked time is tied to an active shift.
+      const shiftsTableExists = await tableExists('technician_shifts');
+      if (shiftsTableExists) {
+        const shiftPh = dbType === 'mysql' ? '?' : '$1';
+        const activeShiftResult = await db.query(
+          `SELECT id FROM technician_shifts 
+           WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
+           ORDER BY clock_in_time DESC LIMIT 1`,
+          [technicianId]
+        );
+        if (activeShiftResult.rows.length === 0) {
+          return res.status(400).json({
+            error: {
+              code: 'NOT_CLOCKED_IN',
+              message: 'You must clock in to your shift before starting a job timer.'
+            }
+          });
+        }
       }
 
       // Enforce workflow: assignment cannot be completed/cancelled when starting a timer
