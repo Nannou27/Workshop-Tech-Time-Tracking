@@ -536,7 +536,12 @@
                     loadActiveTimer();
                     loadAssignments();
                 } else {
-                    alert('Error: ' + (data.error?.message || 'Failed to start timer'));
+                    const msg = data.error?.message || 'Failed to start timer';
+                    if (data.error?.code === 'ON_BREAK') {
+                        alert('⏸️ Cannot start work while on break.\n\nPlease click "End Break" first, then start your job timer.');
+                    } else {
+                        alert('Error: ' + msg);
+                    }
                 }
             } catch (error) {
                 alert('Error starting timer: ' + error.message);
@@ -572,7 +577,12 @@
                     loadActiveTimer();
                     loadAssignments();
                 } else {
-                    alert('Error: ' + (data.error?.message || 'Failed to resume timer'));
+                    const msg = data.error?.message || 'Failed to resume timer';
+                    if (data.error?.code === 'ON_BREAK') {
+                        alert('⏸️ Cannot resume work while on break.\n\nPlease click "End Break" first, then resume your job timer.');
+                    } else {
+                        alert('Error: ' + msg);
+                    }
                 }
             } catch (error) {
                 alert('Error resuming timer: ' + error.message);
