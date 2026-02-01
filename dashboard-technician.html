@@ -416,6 +416,13 @@
                     activeTimer = data.data[0];
                     startTimerDisplay(activeTimer);
                 } else {
+                    // CRITICAL: Stop the old timer interval when there's no active timer
+                    if (timerInterval) {
+                        console.log('[TIMER] Clearing interval (no active timer)');
+                        clearInterval(timerInterval);
+                        timerInterval = null;
+                    }
+                    activeTimer = null;
                     document.getElementById('timerDisplay').classList.remove('timer-active');
                     document.getElementById('timerValue').textContent = '00:00:00';
                     document.getElementById('timerJobInfo').textContent = 'No active timer';
