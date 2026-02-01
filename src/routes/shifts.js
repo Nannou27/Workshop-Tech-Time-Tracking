@@ -613,8 +613,13 @@ router.post('/clock-out', async (req, res, next) => {
 // POST /api/v1/shifts/start-break - Start break (pause shift timer)
 router.post('/start-break', async (req, res, next) => {
   try {
+    logger.info(`[BREAK-START] START-BREAK endpoint called by user ${req.user?.id}`);
+    
     const shiftsTableExists = await tableExists('technician_shifts');
+    logger.info(`[BREAK-START] technician_shifts table exists: ${shiftsTableExists}`);
+    
     if (!shiftsTableExists) {
+      logger.warn(`[BREAK-START] Shifts table does not exist, returning SCHEMA_MISMATCH`);
       return res.status(400).json({
         error: {
           code: 'SCHEMA_MISMATCH',
@@ -625,6 +630,7 @@ router.post('/start-break', async (req, res, next) => {
 
     const dbType = process.env.DB_TYPE || 'postgresql';
     const placeholder = dbType === 'mysql' ? '?' : '$1';
+    logger.info(`[BREAK-START] DB type: ${dbType}`);
     
     // Find active shift
     const activeShift = await db.query(

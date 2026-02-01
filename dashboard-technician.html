@@ -967,7 +967,9 @@
 
         // Start break
         async function startBreak() {
+            console.log('[BREAK] startBreak() called');
             try {
+                console.log('[BREAK] Calling API:', `${API_BASE_URL}/shifts/start-break`);
                 const response = await apiFetch(`${API_BASE_URL}/shifts/start-break`, {
                     method: 'POST',
                     headers: {
@@ -976,15 +978,20 @@
                     }
                 });
                 
+                console.log('[BREAK] API response status:', response.status, response.ok);
+                
                 if (response.ok) {
+                    console.log('[BREAK] Break started successfully, refreshing UI');
                     await loadActiveShift();
                     await loadActiveTimer(); // Refresh timer display (timers auto-paused on break)
                     await loadAssignments(); // Refresh job cards to show paused state
                 } else {
                     const data = await response.json();
+                    console.error('[BREAK] Error response:', data);
                     alert('Error starting break: ' + (data.error?.message || 'Unknown error'));
                 }
             } catch (error) {
+                console.error('[BREAK] Exception:', error);
                 alert('Error starting break: ' + error.message);
             }
         }
