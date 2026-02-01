@@ -450,6 +450,9 @@
             timerDisplayEl.classList.add('timer-active');
             timerValueEl.style.display = 'block'; // Force visible
             timerValueEl.style.visibility = 'visible'; // Force visible
+            timerValueEl.style.color = '#fff'; // Force white color (visible on purple gradient)
+            timerValueEl.style.fontSize = '4em'; // Force size
+            timerValueEl.style.fontWeight = 'bold'; // Force weight
             
             // Get job card details for asset info
             apiFetch(`${API_BASE_URL}/jobcards/${timer.job_card_id}`, { method: 'GET' })
