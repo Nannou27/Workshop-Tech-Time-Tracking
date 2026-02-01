@@ -971,6 +971,8 @@
                 
                 if (response.ok) {
                     await loadActiveShift();
+                    await loadActiveTimer(); // Refresh timer display (timers auto-paused on break)
+                    await loadAssignments(); // Refresh job cards to show paused state
                 } else {
                     const data = await response.json();
                     alert('Error starting break: ' + (data.error?.message || 'Unknown error'));
@@ -995,6 +997,8 @@
 
                 if (response.ok) {
                     await loadActiveShift();
+                    await loadActiveTimer(); // Refresh timer display
+                    await loadAssignments(); // Refresh job cards
                 } else {
                     alert('Error ending break: ' + (data.error?.message || 'Unknown error'));
                 }
