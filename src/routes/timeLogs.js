@@ -655,6 +655,48 @@ router.post('/:id/resume',
 
     const pausedTimeLog = pausedTimeLogResult.rows[0];
 
+    // ENFORCE: Cannot resume job timer while on break (same check as start timer)
+    try {
+      const shiftsTableExists = await tableExists('technician_shifts');
+      if (shiftsTableExists) {
+        const shiftPh = dbType === 'mysql' ? '?' : '$1';
+        const activeShiftResult = await db.query(
+          `SELECT id, break_start_time, notes FROM technician_shifts 
+           WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
+           ORDER BY clock_in_time DESC LIMIT 1`,
+          [technicianId]
+        );
+        
+        if (activeShiftResult.rows.length > 0) {
+          const shift = activeShiftResult.rows[0];
+          const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
+          let breakStartIso = null;
+          
+          if (hasBreakStartColumn && shift.break_start_time) {
+            breakStartIso = shift.break_start_time;
+          } else if (shift.notes) {
+            try {
+              const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
+              breakStartIso = notesObj?.break_state?.start_time || null;
+            } catch (e) {
+              breakStartIso = null;
+            }
+          }
+          
+          if (breakStartIso) {
+            return res.status(400).json({
+              error: {
+                code: 'ON_BREAK',
+                message: 'You cannot resume a job timer while on break. Please end your break first.'
+              }
+            });
+          }
+        }
+      }
+    } catch (shiftCheckErr) {
+      logger.warn('Could not enforce break requirements for resume (table may not exist):', shiftCheckErr);
+    }
+
     // Create new time log segment
     const notesValue = notes !== undefined ? notes : null;
     let result;
