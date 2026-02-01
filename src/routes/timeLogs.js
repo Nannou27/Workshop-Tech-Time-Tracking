@@ -574,6 +574,40 @@ router.post('/:id/resume',
       });
     }
 
+    // ENFORCE: Check for existing active timer (unless multi-tasking enabled)
+    let multiTaskingEnabled = false;
+    try {
+      const keyColumn = dbType === 'mysql' ? '`key`' : 'key';
+      const ms = await db.query(
+        dbType === 'mysql'
+          ? `SELECT value FROM system_settings WHERE ${keyColumn} = ? LIMIT 1`
+          : `SELECT value FROM system_settings WHERE key = $1 LIMIT 1`,
+        ['timer.multi_tasking_enabled']
+      );
+      if (ms.rows && ms.rows[0] && ms.rows[0].value != null) {
+        const v = typeof ms.rows[0].value === 'string' ? JSON.parse(ms.rows[0].value) : ms.rows[0].value;
+        multiTaskingEnabled = !!(v?.enabled ?? v?.value ?? v);
+      }
+    } catch {
+      multiTaskingEnabled = false;
+    }
+    
+    if (!multiTaskingEnabled) {
+      const activeTimerPh = dbType === 'mysql' ? '?' : '$1';
+      const activeTimerResult = await db.query(
+        `SELECT id FROM time_logs WHERE technician_id = ${activeTimerPh} AND status = 'active'`,
+        [technicianId]
+      );
+      if (activeTimerResult.rows.length > 0) {
+        return res.status(409).json({
+          error: {
+            code: 'TIMER_ALREADY_ACTIVE',
+            message: 'Another timer is already active. Stop it first or enable multi-tasking.'
+          }
+        });
+      }
+    }
+
     // Create new time log segment
     const notesValue = notes !== undefined ? notes : null;
 
