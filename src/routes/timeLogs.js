@@ -663,4 +663,111 @@ router.get('/active', async (req, res, next) => {
   }
 });
 
+// POST /api/v1/timelogs/:id/stop
+router.post('/:id/stop',
+  [
+    body('notes').optional()
+  ],
+  async (req, res, next) => {
+    try {
+      const { notes } = req.body;
+      const timeLogId = req.params.id;
+      const dbType = process.env.DB_TYPE || 'postgresql';
+      const placeholder = dbType === 'mysql' ? '?' : '$1';
+
+      // Get time log
+      const result = await db.query(
+        `SELECT * FROM time_logs WHERE id = ${placeholder}`,
+        [timeLogId]
+      );
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({
+          error: {
+            code: 'RESOURCE_NOT_FOUND',
+            message: 'Time log not found'
+          }
+        });
+      }
+
+      const timeLog = result.rows[0];
+
+      // Check ownership
+      if (timeLog.technician_id !== req.user.id && req.user.roleId !== 1) {
+        return res.status(403).json({
+          error: {
+            code: 'AUTHORIZATION_FAILED',
+            message: 'Time log does not belong to this technician'
+          }
+        });
+      }
+
+      if (timeLog.status !== 'active') {
+        return res.status(400).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Time log is not active'
+          }
+        });
+      }
+
+      // Calculate final duration
+      const stopTs = new Date();
+      const startTs = new Date(timeLog.start_ts);
+      const durationSeconds = Math.floor((stopTs - startTs) / 1000);
+      
+      // Update time log to finished
+      if (dbType === 'mysql') {
+        await db.query(
+          `UPDATE time_logs 
+           SET end_ts = NOW(), status = 'finished', notes = COALESCE(?, notes), duration_seconds = ?
+           WHERE id = ?`,
+          [notes, durationSeconds, timeLogId]
+        );
+      } else {
+        await db.query(
+          `UPDATE time_logs 
+           SET end_ts = NOW(), status = 'finished', notes = COALESCE($1, notes), duration_seconds = $2
+           WHERE id = $3`,
+          [notes, durationSeconds, timeLogId]
+        );
+      }
+
+      // Mark assignment as completed
+      if (dbType === 'mysql') {
+        await db.query(
+          `UPDATE assignments SET status = 'completed', completed_at = NOW() WHERE id = ?`,
+          [timeLog.assignment_id]
+        );
+      } else {
+        await db.query(
+          `UPDATE assignments SET status = 'completed', completed_at = now() WHERE id = $1`,
+          [timeLog.assignment_id]
+        );
+      }
+
+      // Fetch updated record
+      const updatedResult = await db.query(
+        `SELECT id, end_ts, status, duration_seconds FROM time_logs WHERE id = ${placeholder}`,
+        [timeLogId]
+      );
+
+      // Create audit log
+      const auditPh1 = dbType === 'mysql' ? '?' : '$1';
+      const auditPh2 = dbType === 'mysql' ? '?' : '$2';
+      const auditPh3 = dbType === 'mysql' ? '?' : '$3';
+      await db.query(
+        `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
+         VALUES (${auditPh1}, 'timelog.stopped', 'time_log', ${auditPh2}, ${auditPh3})`,
+        [req.user.id, timeLogId, JSON.stringify({ duration_seconds: durationSeconds })]
+      );
+
+      res.json(updatedResult.rows[0]);
+    } catch (error) {
+      logger.error('Stop timer error:', error);
+      next(error);
+    }
+  }
+);
+
 module.exports = router;
