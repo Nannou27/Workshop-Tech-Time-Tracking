@@ -19,8 +19,11 @@ async function tableExists(tableName) {
       checkQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '${tableName}') as exists`;
     }
     const result = await db.query(checkQuery);
-    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+    const exists = dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+    logger.info(`[TABLE-CHECK] ${tableName} exists: ${exists} (dbType: ${dbType})`);
+    return exists;
   } catch (error) {
+    logger.error(`[TABLE-CHECK] Error checking if ${tableName} exists:`, error);
     return false;
   }
 }
@@ -39,8 +42,11 @@ async function columnExists(tableName, columnName) {
       ) as exists`;
     }
     const result = await db.query(checkQuery);
-    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+    const exists = dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+    logger.info(`[COLUMN-CHECK] ${tableName}.${columnName} exists: ${exists}`);
+    return exists;
   } catch (error) {
+    logger.error(`[COLUMN-CHECK] Error checking if ${tableName}.${columnName} exists:`, error);
     return false;
   }
 }
