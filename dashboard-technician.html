@@ -428,7 +428,29 @@
 
         // Start timer display
         function startTimerDisplay(timer) {
-            document.getElementById('timerDisplay').classList.add('timer-active');
+            console.log('[TIMER] startTimerDisplay called with:', timer);
+            
+            const timerDisplayEl = document.getElementById('timerDisplay');
+            const timerValueEl = document.getElementById('timerValue');
+            const timerJobInfoEl = document.getElementById('timerJobInfo');
+            const timerControlsEl = document.getElementById('timerControls');
+            
+            console.log('[TIMER] Elements found:', {
+                timerDisplayEl: !!timerDisplayEl,
+                timerValueEl: !!timerValueEl,
+                timerJobInfoEl: !!timerJobInfoEl,
+                timerControlsEl: !!timerControlsEl
+            });
+            
+            if (!timerDisplayEl || !timerValueEl) {
+                console.error('[TIMER] Critical elements missing, cannot start timer display');
+                return;
+            }
+            
+            timerDisplayEl.classList.add('timer-active');
+            timerValueEl.style.display = 'block'; // Force visible
+            timerValueEl.style.visibility = 'visible'; // Force visible
+            
             // Get job card details for asset info
             apiFetch(`${API_BASE_URL}/jobcards/${timer.job_card_id}`, { method: 'GET' })
             .then(res => res.json())
@@ -440,31 +462,52 @@
                 if (jobCard.location_name) {
                     jobInfo += `<br><small style="color: #666;">Location: ${jobCard.location_name}</small>`;
                 }
-                document.getElementById('timerJobInfo').innerHTML = jobInfo;
+                if (timerJobInfoEl) timerJobInfoEl.innerHTML = jobInfo;
             })
             .catch(err => {
-                document.getElementById('timerJobInfo').textContent = `Job: ${timer.job_number} - ${timer.customer_name}`;
+                console.warn('[TIMER] Could not load job card details:', err);
+                if (timerJobInfoEl) timerJobInfoEl.textContent = `Job: ${timer.job_number} - ${timer.customer_name}`;
             });
-            document.getElementById('timerControls').innerHTML = `
-                <button class="btn-pause" onclick="pauseTimer(${timer.id})">Pause</button>
-                <button class="btn-stop" onclick="stopTimer(${timer.id})">Stop</button>
-            `;
+            
+            if (timerControlsEl) {
+                timerControlsEl.innerHTML = `
+                    <button class="btn-pause" onclick="pauseTimer(${timer.id})">Pause</button>
+                    <button class="btn-stop" onclick="stopTimer(${timer.id})">Stop</button>
+                `;
+            }
             
             const startTime = new Date(timer.start_ts);
+            console.log('[TIMER] Start time parsed:', startTime, 'from:', timer.start_ts);
+            
             const baseSeconds = Number.isFinite(Number(timer.accumulated_seconds))
                 ? Number(timer.accumulated_seconds)
                 : 0;
             
-            if (timerInterval) clearInterval(timerInterval);
+            console.log('[TIMER] Base seconds:', baseSeconds);
+            
+            if (timerInterval) {
+                console.log('[TIMER] Clearing existing interval');
+                clearInterval(timerInterval);
+            }
+            
+            let updateCount = 0;
             timerInterval = setInterval(() => {
                 const now = new Date();
                 const diff = Math.max(0, Math.floor((now - startTime) / 1000) + Math.floor(baseSeconds));
                 const hours = Math.floor(diff / 3600);
                 const minutes = Math.floor((diff % 3600) / 60);
                 const seconds = diff % 60;
-                document.getElementById('timerValue').textContent = 
-                    `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                
+                if (updateCount < 3) {
+                    console.log('[TIMER] Update #' + updateCount + ':', timeStr, 'diff:', diff);
+                }
+                updateCount++;
+                
+                timerValueEl.textContent = timeStr;
             }, 1000);
+            
+            console.log('[TIMER] Interval created, ID:', timerInterval);
         }
 
         // Start timer
