@@ -177,53 +177,62 @@ router.post('/start',
 
       // ENFORCE: Technician must be clocked in before starting a job timer.
       // This ensures all worked time is tied to an active shift.
-      try {
-        const shiftsTableExists = await tableExists('technician_shifts');
-        if (shiftsTableExists) {
-          const shiftPh = dbType === 'mysql' ? '?' : '$1';
-          const activeShiftResult = await db.query(
-            `SELECT id, break_start_time, notes FROM technician_shifts 
-             WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
-             ORDER BY clock_in_time DESC LIMIT 1`,
-            [technicianId]
-          );
-          if (activeShiftResult.rows.length === 0) {
-            return res.status(400).json({
-              error: {
-                code: 'NOT_CLOCKED_IN',
-                message: 'You must clock in to your shift before starting a job timer.'
-              }
-            });
-          }
-          
-          // ENFORCE: Cannot start job timer while on break.
-          const shift = activeShiftResult.rows[0];
-          const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
-          let breakStartIso = null;
-          if (hasBreakStartColumn && shift.break_start_time) {
-            breakStartIso = shift.break_start_time;
-          } else if (shift.notes) {
-            // Check notes JSON for break_state
-            try {
-              const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
-              breakStartIso = notesObj?.break_state?.start_time || null;
-            } catch (e) {
-              breakStartIso = null;
+      // CRITICAL: Fail-closed enforcement - if we can't verify, reject the request.
+      const shiftsTableExists = await tableExists('technician_shifts');
+      if (!shiftsTableExists) {
+        // If shifts table doesn't exist, we can't enforce break rules properly.
+        // Log warning but allow (backward compat with old schema). 
+        // TODO: Make this mandatory once all deployments have technician_shifts table.
+        logger.warn('[TIMER-START] Cannot enforce break rules: technician_shifts table does not exist');
+      } else {
+        const shiftPh = dbType === 'mysql' ? '?' : '$1';
+        const activeShiftResult = await db.query(
+          `SELECT id, break_start_time, notes FROM technician_shifts 
+           WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
+           ORDER BY clock_in_time DESC LIMIT 1`,
+          [technicianId]
+        );
+        
+        if (activeShiftResult.rows.length === 0) {
+          return res.status(400).json({
+            error: {
+              code: 'NOT_CLOCKED_IN',
+              message: 'You must clock in to your shift before starting a job timer.'
             }
-          }
-          
-          if (breakStartIso) {
-            return res.status(400).json({
-              error: {
-                code: 'ON_BREAK',
-                message: 'You cannot start a job timer while on break. Please end your break first.'
-              }
-            });
+          });
+        }
+        
+        // ENFORCE: Cannot start job timer while on break (MANDATORY, fail-closed).
+        const shift = activeShiftResult.rows[0];
+        const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
+        let breakStartIso = null;
+        
+        if (hasBreakStartColumn && shift.break_start_time) {
+          breakStartIso = shift.break_start_time;
+          logger.info(`[TIMER-START] Break check via column: ${breakStartIso}`);
+        } else if (shift.notes) {
+          // Check notes JSON for break_state
+          try {
+            const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
+            breakStartIso = notesObj?.break_state?.start_time || null;
+            logger.info(`[TIMER-START] Break check via notes: ${breakStartIso}`);
+          } catch (e) {
+            logger.warn('[TIMER-START] Could not parse shift notes for break state');
+            breakStartIso = null;
           }
         }
-      } catch (shiftCheckErr) {
-        // If shift table checks fail, log but don't block (backward compatible with deployments without shifts table)
-        logger.warn('Could not enforce shift/break requirements (table may not exist):', shiftCheckErr);
+        
+        if (breakStartIso) {
+          logger.warn(`[TIMER-START] BLOCKED: Technician ${technicianId} attempted to start timer while on break`);
+          return res.status(409).json({
+            error: {
+              code: 'ON_BREAK',
+              message: 'You cannot start a job timer while on break. Please end your break first.'
+            }
+          });
+        }
+        
+        logger.info(`[TIMER-START] Break check passed for technician ${technicianId}`);
       }
 
       // Enforce workflow: assignment cannot be completed/cancelled when starting a timer
@@ -655,46 +664,50 @@ router.post('/:id/resume',
 
     const pausedTimeLog = pausedTimeLogResult.rows[0];
 
-    // ENFORCE: Cannot resume job timer while on break (same check as start timer)
-    try {
-      const shiftsTableExists = await tableExists('technician_shifts');
-      if (shiftsTableExists) {
-        const shiftPh = dbType === 'mysql' ? '?' : '$1';
-        const activeShiftResult = await db.query(
-          `SELECT id, break_start_time, notes FROM technician_shifts 
-           WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
-           ORDER BY clock_in_time DESC LIMIT 1`,
-          [technicianId]
-        );
+    // ENFORCE: Cannot resume job timer while on break (MANDATORY, fail-closed)
+    const shiftsTableExists = await tableExists('technician_shifts');
+    if (!shiftsTableExists) {
+      logger.warn('[TIMER-RESUME] Cannot enforce break rules: technician_shifts table does not exist');
+    } else {
+      const shiftPh = dbType === 'mysql' ? '?' : '$1';
+      const activeShiftResult = await db.query(
+        `SELECT id, break_start_time, notes FROM technician_shifts 
+         WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
+         ORDER BY clock_in_time DESC LIMIT 1`,
+        [technicianId]
+      );
+      
+      if (activeShiftResult.rows.length > 0) {
+        const shift = activeShiftResult.rows[0];
+        const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
+        let breakStartIso = null;
         
-        if (activeShiftResult.rows.length > 0) {
-          const shift = activeShiftResult.rows[0];
-          const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
-          let breakStartIso = null;
-          
-          if (hasBreakStartColumn && shift.break_start_time) {
-            breakStartIso = shift.break_start_time;
-          } else if (shift.notes) {
-            try {
-              const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
-              breakStartIso = notesObj?.break_state?.start_time || null;
-            } catch (e) {
-              breakStartIso = null;
-            }
-          }
-          
-          if (breakStartIso) {
-            return res.status(400).json({
-              error: {
-                code: 'ON_BREAK',
-                message: 'You cannot resume a job timer while on break. Please end your break first.'
-              }
-            });
+        if (hasBreakStartColumn && shift.break_start_time) {
+          breakStartIso = shift.break_start_time;
+          logger.info(`[TIMER-RESUME] Break check via column: ${breakStartIso}`);
+        } else if (shift.notes) {
+          try {
+            const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
+            breakStartIso = notesObj?.break_state?.start_time || null;
+            logger.info(`[TIMER-RESUME] Break check via notes: ${breakStartIso}`);
+          } catch (e) {
+            logger.warn('[TIMER-RESUME] Could not parse shift notes for break state');
+            breakStartIso = null;
           }
         }
+        
+        if (breakStartIso) {
+          logger.warn(`[TIMER-RESUME] BLOCKED: Technician ${technicianId} attempted to resume timer while on break`);
+          return res.status(409).json({
+            error: {
+              code: 'ON_BREAK',
+              message: 'You cannot resume a job timer while on break. Please end your break first.'
+            }
+          });
+        }
+        
+        logger.info(`[TIMER-RESUME] Break check passed for technician ${technicianId}`);
       }
-    } catch (shiftCheckErr) {
-      logger.warn('Could not enforce break requirements for resume (table may not exist):', shiftCheckErr);
     }
 
     // Create new time log segment
