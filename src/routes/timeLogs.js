@@ -18,8 +18,11 @@ async function tableExists(tableName) {
       ? `SHOW TABLES LIKE '${tableName}'`
       : `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '${tableName}') as exists`;
     const result = await db.query(checkQuery);
-    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+    const exists = dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+    logger.info(`[TABLE-CHECK] ${tableName} exists: ${exists} (dbType: ${dbType})`);
+    return exists;
   } catch (error) {
+    logger.error(`[TABLE-CHECK] Error checking if ${tableName} exists:`, error);
     return false;
   }
 }
@@ -32,9 +35,64 @@ async function columnExists(tableName, columnName) {
       ? `SHOW COLUMNS FROM ${tableName} LIKE '${columnName}'`
       : `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '${tableName}' AND column_name = '${columnName}') as exists`;
     const result = await db.query(checkQuery);
-    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+    const exists = dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+    logger.info(`[COLUMN-CHECK] ${tableName}.${columnName} exists: ${exists}`);
+    return exists;
   } catch (error) {
+    logger.error(`[COLUMN-CHECK] Error checking if ${tableName}.${columnName} exists:`, error);
     return false;
+  }
+}
+
+// Helper: check if technician currently has an active break
+async function hasActiveBreak(technicianId) {
+  try {
+    const dbType = process.env.DB_TYPE || 'postgresql';
+    const shiftsTableExists = await tableExists('technician_shifts');
+    if (!shiftsTableExists) {
+      logger.warn('[BREAK-CHECK] technician_shifts table does not exist, cannot check break state');
+      return false; // Fail-open for backward compat with old schema
+    }
+
+    const shiftPh = dbType === 'mysql' ? '?' : '$1';
+    const shiftResult = await db.query(
+      `SELECT id, break_start_time, notes FROM technician_shifts 
+       WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
+       ORDER BY clock_in_time DESC LIMIT 1`,
+      [technicianId]
+    );
+
+    if (shiftResult.rows.length === 0) {
+      logger.info(`[BREAK-CHECK] No active shift for technician ${technicianId}`);
+      return false;
+    }
+
+    const shift = shiftResult.rows[0];
+    logger.info(`[BREAK-CHECK] Shift ${shift.id} - break_start_time: ${shift.break_start_time}`);
+
+    const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
+    let breakStartIso = null;
+
+    if (hasBreakStartColumn && shift.break_start_time) {
+      breakStartIso = shift.break_start_time;
+      logger.info(`[BREAK-CHECK] Break active via column: ${breakStartIso}`);
+    } else if (shift.notes) {
+      try {
+        const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
+        const noteBreakStart = notesObj?.break_state?.start_time || null;
+        logger.info(`[BREAK-CHECK] Break check via notes - break_state.start_time: ${noteBreakStart}`);
+        breakStartIso = noteBreakStart;
+      } catch (e) {
+        logger.warn(`[BREAK-CHECK] Could not parse notes for break state: ${e.message}`);
+      }
+    }
+
+    const isOnBreak = !!breakStartIso;
+    logger.info(`[BREAK-CHECK] Result for technician ${technicianId}: isOnBreak=${isOnBreak}`);
+    return isOnBreak;
+  } catch (err) {
+    logger.error('[BREAK-CHECK] Error checking break state:', err);
+    return false; // Fail-open on error
   }
 }
 
@@ -60,7 +118,7 @@ router.get('/', async (req, res, next) => {
       paramCount++;
       queryText += ` AND technician_id = ${placeholder}${dbType === 'mysql' ? '' : paramCount}`;
       params.push(technician_id);
-    } else if (req.user.roleId !== 1) { // Not admin - only own logs
+    } else if (req.user.roleId !== 1) {
       paramCount++;
       queryText += ` AND technician_id = ${placeholder}${dbType === 'mysql' ? '' : paramCount}`;
       params.push(req.user.id);
@@ -98,13 +156,10 @@ router.get('/', async (req, res, next) => {
 
     queryText += ' ORDER BY start_ts DESC';
 
-    if (limit !== undefined) {
-      const n = parseInt(limit);
-      if (!Number.isNaN(n) && n > 0) {
-        paramCount++;
-        queryText += ` LIMIT ${placeholder}${dbType === 'mysql' ? '' : paramCount}`;
-        params.push(n);
-      }
+    if (limit) {
+      paramCount++;
+      queryText += ` LIMIT ${placeholder}${dbType === 'mysql' ? '' : paramCount}`;
+      params.push(parseInt(limit));
     }
 
     const result = await db.query(queryText, params);
@@ -175,19 +230,26 @@ router.post('/start',
         });
       }
 
+      // ENFORCE: Cannot start/resume job timer while on break (centralized check)
+      const onBreak = await hasActiveBreak(technicianId);
+      if (onBreak) {
+        logger.warn(`[TIMER-START] BLOCKED: Technician ${technicianId} attempted to start timer while on break`);
+        return res.status(409).json({
+          error: {
+            code: 'ON_BREAK',
+            message: 'You cannot start a job timer while on break. Please end your break first.'
+          }
+        });
+      }
+
       // ENFORCE: Technician must be clocked in before starting a job timer.
-      // This ensures all worked time is tied to an active shift.
-      // CRITICAL: Fail-closed enforcement - if we can't verify, reject the request.
       const shiftsTableExists = await tableExists('technician_shifts');
       if (!shiftsTableExists) {
-        // If shifts table doesn't exist, we can't enforce break rules properly.
-        // Log warning but allow (backward compat with old schema). 
-        // TODO: Make this mandatory once all deployments have technician_shifts table.
-        logger.warn('[TIMER-START] Cannot enforce break rules: technician_shifts table does not exist');
+        logger.warn('[TIMER-START] Cannot enforce clock-in rule: technician_shifts table does not exist');
       } else {
         const shiftPh = dbType === 'mysql' ? '?' : '$1';
         const activeShiftResult = await db.query(
-          `SELECT id, break_start_time, notes FROM technician_shifts 
+          `SELECT id FROM technician_shifts 
            WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
            ORDER BY clock_in_time DESC LIMIT 1`,
           [technicianId]
@@ -201,38 +263,6 @@ router.post('/start',
             }
           });
         }
-        
-        // ENFORCE: Cannot start job timer while on break (MANDATORY, fail-closed).
-        const shift = activeShiftResult.rows[0];
-        const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
-        let breakStartIso = null;
-        
-        if (hasBreakStartColumn && shift.break_start_time) {
-          breakStartIso = shift.break_start_time;
-          logger.info(`[TIMER-START] Break check via column: ${breakStartIso}`);
-        } else if (shift.notes) {
-          // Check notes JSON for break_state
-          try {
-            const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
-            breakStartIso = notesObj?.break_state?.start_time || null;
-            logger.info(`[TIMER-START] Break check via notes: ${breakStartIso}`);
-          } catch (e) {
-            logger.warn('[TIMER-START] Could not parse shift notes for break state');
-            breakStartIso = null;
-          }
-        }
-        
-        if (breakStartIso) {
-          logger.warn(`[TIMER-START] BLOCKED: Technician ${technicianId} attempted to start timer while on break`);
-          return res.status(409).json({
-            error: {
-              code: 'ON_BREAK',
-              message: 'You cannot start a job timer while on break. Please end your break first.'
-            }
-          });
-        }
-        
-        logger.info(`[TIMER-START] Break check passed for technician ${technicianId}`);
       }
 
       // Enforce workflow: assignment cannot be completed/cancelled when starting a timer
@@ -368,12 +398,18 @@ router.post('/start',
         }
 
         // Update assignment status
-        const updatePlaceholder = dbType === 'mysql' ? '?' : '$1';
-        await db.query(
-          `UPDATE assignments SET status = 'in_progress', started_at = ${dbType === 'mysql' ? 'NOW()' : 'now()'} 
-           WHERE id = ${updatePlaceholder}`,
-          [assignment_id]
-        );
+        const updatePlaceholder = dbType === 'mysql';
+        if (dbType === 'mysql') {
+          await db.query(
+            `UPDATE assignments SET status = 'in_progress', started_at = COALESCE(started_at, NOW()) WHERE id = ?`,
+            [assignment_id]
+          );
+        } else {
+          await db.query(
+            `UPDATE assignments SET status = 'in_progress', started_at = COALESCE(started_at, now()) WHERE id = $1`,
+            [assignment_id]
+          );
+        }
 
         // Create audit log
         const auditPlaceholder1 = dbType === 'mysql' ? '?' : '$1';
@@ -382,168 +418,18 @@ router.post('/start',
         await db.query(
           `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
            VALUES (${auditPlaceholder1}, 'timelog.started', 'time_log', ${auditPlaceholder2}, ${auditPlaceholder3})`,
-          [technicianId, timeLog.id, JSON.stringify({ assignment_id })]
+          [req.user.id, timeLog.id, JSON.stringify({ assignment_id })]
         );
 
-        // TODO: Emit WebSocket event
-        // io.emit('timelog.started', timeLog);
+        await redis.releaseLock(lockKey);
 
         res.status(201).json(timeLog);
-      } finally {
+      } catch (innerError) {
         await redis.releaseLock(lockKey);
+        throw innerError;
       }
     } catch (error) {
       logger.error('Start timer error:', error);
-      next(error);
-    }
-  }
-);
-
-// POST /api/v1/timelogs/:id/stop
-router.post('/:id/stop',
-  [
-    body('notes').optional()
-  ],
-  async (req, res, next) => {
-    try {
-      const timeLogId = req.params.id;
-      const { notes } = req.body;
-
-      // Get time log
-      const dbType = process.env.DB_TYPE || 'postgresql';
-      const placeholder = dbType === 'mysql' ? '?' : '$1';
-      const timeLogResult = await db.query(
-        `SELECT * FROM time_logs WHERE id = ${placeholder}`,
-        [timeLogId]
-      );
-
-      if (timeLogResult.rows.length === 0) {
-        return res.status(404).json({
-          error: {
-            code: 'RESOURCE_NOT_FOUND',
-            message: 'Time log not found'
-          }
-        });
-      }
-
-      const timeLog = timeLogResult.rows[0];
-
-      // Verify ownership (unless admin)
-      if (timeLog.technician_id !== req.user.id && req.user.roleId !== 1) {
-        return res.status(403).json({
-          error: {
-            code: 'AUTHORIZATION_FAILED',
-            message: 'Time log does not belong to this technician'
-          }
-        });
-      }
-
-      if (timeLog.status !== 'active') {
-        return res.status(400).json({
-          error: {
-            code: 'VALIDATION_ERROR',
-            message: 'Time log is not active'
-          }
-        });
-      }
-
-      // Update time log
-      const notesValue = notes !== undefined ? notes : null;
-      
-      // Calculate duration in application for MySQL compatibility
-      const endTs = new Date();
-      const startTs = new Date(timeLog.start_ts);
-      const durationSeconds = Math.floor((endTs - startTs) / 1000);
-      
-      if (dbType === 'mysql') {
-        await db.query(
-          `UPDATE time_logs 
-           SET end_ts = NOW(), status = 'finished', notes = COALESCE(?, notes), duration_seconds = ?
-           WHERE id = ?`,
-          [notesValue, durationSeconds, timeLogId]
-        );
-      } else {
-        await db.query(
-          `UPDATE time_logs 
-           SET end_ts = NOW(), status = 'finished', notes = COALESCE($1, notes), duration_seconds = $2
-           WHERE id = $3`,
-          [notesValue, durationSeconds, timeLogId]
-        );
-      }
-      
-      // Fetch updated record
-      const updatedPlaceholder = dbType === 'mysql' ? '?' : '$1';
-      const updatedResult = await db.query(
-        `SELECT id, end_ts, duration_seconds, status, notes FROM time_logs WHERE id = ${updatedPlaceholder}`,
-        [timeLogId]
-      );
-
-      // Update assignment status
-      const assignmentPlaceholder = dbType === 'mysql' ? '?' : '$1';
-      await db.query(
-        `UPDATE assignments SET status = 'completed', completed_at = ${dbType === 'mysql' ? 'NOW()' : 'now()'} 
-         WHERE id = ${assignmentPlaceholder}`,
-        [timeLog.assignment_id]
-      );
-
-      // Check if all assignments for this job card are completed, then update job card status
-      const jobCardCheck = await db.query(
-        `SELECT job_card_id FROM assignments WHERE id = ${assignmentPlaceholder}`,
-        [timeLog.assignment_id]
-      );
-      
-      if (jobCardCheck.rows.length > 0) {
-        const jobCardId = jobCardCheck.rows[0].job_card_id;
-        const jobCardPlaceholder = dbType === 'mysql' ? '?' : '$1';
-        
-        // Check if all assignments for this job card are completed
-        const allAssignmentsResult = await db.query(
-          `SELECT COUNT(*) as total, 
-                  SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_count
-           FROM assignments 
-           WHERE job_card_id = ${jobCardPlaceholder} AND status != 'cancelled'`,
-          [jobCardId]
-        );
-        
-        const totalAssignments = parseInt(allAssignmentsResult.rows[0].total || 0);
-        const completedAssignments = parseInt(allAssignmentsResult.rows[0].completed_count || 0);
-        
-        // If all assignments are completed, update job card status to completed
-        if (totalAssignments > 0 && totalAssignments === completedAssignments) {
-          await db.query(
-            `UPDATE job_cards SET status = 'completed', completed_at = ${dbType === 'mysql' ? 'NOW()' : 'now()'} 
-             WHERE id = ${jobCardPlaceholder}`,
-            [jobCardId]
-          );
-        } else if (completedAssignments > 0) {
-          // If at least one assignment is completed, update job card status to in_progress
-          await db.query(
-            `UPDATE job_cards SET status = 'in_progress' 
-             WHERE id = ${jobCardPlaceholder} AND status = 'open'`,
-            [jobCardId]
-          );
-        }
-      }
-
-      // Create audit log
-      const auditPlaceholder1 = dbType === 'mysql' ? '?' : '$1';
-      const auditPlaceholder2 = dbType === 'mysql' ? '?' : '$2';
-      const auditPlaceholder3 = dbType === 'mysql' ? '?' : '$3';
-      await db.query(
-        `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
-         VALUES (${auditPlaceholder1}, 'timelog.stopped', 'time_log', ${auditPlaceholder2}, ${auditPlaceholder3})`,
-        [req.user.id, timeLogId, JSON.stringify({ duration: updatedResult.rows[0].duration_seconds })]
-      );
-
-      // TODO: Queue for NetSuite sync if enabled
-      // await queueNetSuiteSync(timeLogId);
-
-      // TODO: Emit WebSocket event
-      // io.emit('timelog.stopped', updatedResult.rows[0]);
-
-      res.json(updatedResult.rows[0]);
-    } catch (error) {
-      logger.error('Stop timer error:', error);
       next(error);
     }
   }
@@ -556,17 +442,19 @@ router.post('/:id/pause',
   ],
   async (req, res, next) => {
     try {
-      const timeLogId = req.params.id;
       const { notes } = req.body;
+      const timeLogId = req.params.id;
 
       const dbType = process.env.DB_TYPE || 'postgresql';
       const placeholder = dbType === 'mysql' ? '?' : '$1';
-      const timeLogResult = await db.query(
+
+      // Get time log
+      const result = await db.query(
         `SELECT * FROM time_logs WHERE id = ${placeholder}`,
         [timeLogId]
       );
 
-      if (timeLogResult.rows.length === 0) {
+      if (result.rows.length === 0) {
         return res.status(404).json({
           error: {
             code: 'RESOURCE_NOT_FOUND',
@@ -575,7 +463,17 @@ router.post('/:id/pause',
         });
       }
 
-      const timeLog = timeLogResult.rows[0];
+      const timeLog = result.rows[0];
+
+      // Check if technician owns time log (unless admin)
+      if (timeLog.technician_id !== req.user.id && req.user.roleId !== 1) {
+        return res.status(403).json({
+          error: {
+            code: 'AUTHORIZATION_FAILED',
+            message: 'Time log does not belong to this technician'
+          }
+        });
+      }
 
       if (timeLog.status !== 'active') {
         return res.status(400).json({
@@ -664,54 +562,21 @@ router.post('/:id/resume',
 
     const pausedTimeLog = pausedTimeLogResult.rows[0];
 
-    // ENFORCE: Cannot resume job timer while on break (MANDATORY, fail-closed)
-    const shiftsTableExists = await tableExists('technician_shifts');
-    if (!shiftsTableExists) {
-      logger.warn('[TIMER-RESUME] Cannot enforce break rules: technician_shifts table does not exist');
-    } else {
-      const shiftPh = dbType === 'mysql' ? '?' : '$1';
-      const activeShiftResult = await db.query(
-        `SELECT id, break_start_time, notes FROM technician_shifts 
-         WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
-         ORDER BY clock_in_time DESC LIMIT 1`,
-        [technicianId]
-      );
-      
-      if (activeShiftResult.rows.length > 0) {
-        const shift = activeShiftResult.rows[0];
-        const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
-        let breakStartIso = null;
-        
-        if (hasBreakStartColumn && shift.break_start_time) {
-          breakStartIso = shift.break_start_time;
-          logger.info(`[TIMER-RESUME] Break check via column: ${breakStartIso}`);
-        } else if (shift.notes) {
-          try {
-            const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
-            breakStartIso = notesObj?.break_state?.start_time || null;
-            logger.info(`[TIMER-RESUME] Break check via notes: ${breakStartIso}`);
-          } catch (e) {
-            logger.warn('[TIMER-RESUME] Could not parse shift notes for break state');
-            breakStartIso = null;
-          }
+    // ENFORCE: Cannot resume job timer while on break (centralized check)
+    const onBreak = await hasActiveBreak(technicianId);
+    if (onBreak) {
+      logger.warn(`[TIMER-RESUME] BLOCKED: Technician ${technicianId} attempted to resume timer while on break`);
+      return res.status(409).json({
+        error: {
+          code: 'ON_BREAK',
+          message: 'You cannot resume a job timer while on break. Please end your break first.'
         }
-        
-        if (breakStartIso) {
-          logger.warn(`[TIMER-RESUME] BLOCKED: Technician ${technicianId} attempted to resume timer while on break`);
-          return res.status(409).json({
-            error: {
-              code: 'ON_BREAK',
-              message: 'You cannot resume a job timer while on break. Please end your break first.'
-            }
-          });
-        }
-        
-        logger.info(`[TIMER-RESUME] Break check passed for technician ${technicianId}`);
-      }
+      });
     }
 
     // Create new time log segment
     const notesValue = notes !== undefined ? notes : null;
+
     let result;
     
     if (dbType === 'mysql') {
@@ -799,4 +664,3 @@ router.get('/active', async (req, res, next) => {
 });
 
 module.exports = router;
-

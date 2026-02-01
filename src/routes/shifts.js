@@ -810,6 +810,10 @@ router.post('/end-break', async (req, res, next) => {
 
     const newTotalSeconds = priorTotalSeconds + addedSeconds;
 
+    // Build final notes JSON: close the current break segment and clear break_state (break is ending)
+    let finalNotes = closeOpenBreakSegmentInNotes(shift.notes, now.toISOString());
+    finalNotes = buildNotesWithBreakState(finalNotes, { start_time: null, total_break_seconds: newTotalSeconds });
+
     if (dbType === 'mysql') {
       if (hasBreakSeconds) {
         await db.query(`UPDATE technician_shifts SET break_seconds = ? WHERE id = ?`, [newTotalSeconds, shift.id]);
@@ -817,11 +821,7 @@ router.post('/end-break', async (req, res, next) => {
       if (hasBreakStartColumn) {
         await db.query(`UPDATE technician_shifts SET break_start_time = ? WHERE id = ?`, [null, shift.id]);
       }
-
-      // Keep notes JSON in sync for UI (and for DBs without break_start_time/break_seconds)
-      let notes = buildNotesWithBreakState(shift.notes, { start_time: null, total_break_seconds: newTotalSeconds });
-      notes = closeOpenBreakSegmentInNotes(notes, now.toISOString());
-      await db.query(`UPDATE technician_shifts SET notes = ? WHERE id = ?`, [notes, shift.id]);
+      await db.query(`UPDATE technician_shifts SET notes = ? WHERE id = ?`, [finalNotes, shift.id]);
     } else {
       if (hasBreakSeconds) {
         await db.query(`UPDATE technician_shifts SET break_seconds = $1 WHERE id = $2`, [newTotalSeconds, shift.id]);
@@ -829,11 +829,10 @@ router.post('/end-break', async (req, res, next) => {
       if (hasBreakStartColumn) {
         await db.query(`UPDATE technician_shifts SET break_start_time = $1 WHERE id = $2`, [null, shift.id]);
       }
-
-      let notes = buildNotesWithBreakState(shift.notes, { start_time: null, total_break_seconds: newTotalSeconds });
-      notes = closeOpenBreakSegmentInNotes(notes, now.toISOString());
-      await db.query(`UPDATE technician_shifts SET notes = $1 WHERE id = $2`, [notes, shift.id]);
+      await db.query(`UPDATE technician_shifts SET notes = $1 WHERE id = $2`, [finalNotes, shift.id]);
     }
+    
+    logger.info(`[END-BREAK] Technician ${req.user.id} ended break. break_start_time set to NULL, added ${addedSeconds}s`);
 
     logger.info(`Technician ${req.user.id} ended break. Added ${addedSeconds}s`);
     res.json({
