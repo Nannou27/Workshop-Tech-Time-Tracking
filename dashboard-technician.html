@@ -428,16 +428,7 @@
 
         // Start timer display
         function startTimerDisplay(timer) {
-            const timerDisplayEl = document.getElementById('timerDisplay');
-            const timerValueEl = document.getElementById('timerValue');
-            
-            if (!timerDisplayEl || !timerValueEl) {
-                console.error('Timer display elements not found');
-                return;
-            }
-            
-            timerDisplayEl.classList.add('timer-active');
-            
+            document.getElementById('timerDisplay').classList.add('timer-active');
             // Get job card details for asset info
             apiFetch(`${API_BASE_URL}/jobcards/${timer.job_card_id}`, { method: 'GET' })
             .then(res => res.json())
@@ -452,46 +443,28 @@
                 document.getElementById('timerJobInfo').innerHTML = jobInfo;
             })
             .catch(err => {
-                console.warn('Could not load job card details:', err);
                 document.getElementById('timerJobInfo').textContent = `Job: ${timer.job_number} - ${timer.customer_name}`;
             });
-            
             document.getElementById('timerControls').innerHTML = `
                 <button class="btn-pause" onclick="pauseTimer(${timer.id})">Pause</button>
                 <button class="btn-stop" onclick="stopTimer(${timer.id})">Stop</button>
             `;
             
             const startTime = new Date(timer.start_ts);
-            if (isNaN(startTime.getTime())) {
-                console.error('Invalid start_ts:', timer.start_ts);
-                timerValueEl.textContent = 'ERROR';
-                return;
-            }
-            
             const baseSeconds = Number.isFinite(Number(timer.accumulated_seconds))
                 ? Number(timer.accumulated_seconds)
                 : 0;
             
-            // Clear any existing interval
             if (timerInterval) clearInterval(timerInterval);
-            
-            // Update immediately, then every second
-            const updateTimer = () => {
-                try {
-                    const now = new Date();
-                    const diff = Math.max(0, Math.floor((now - startTime) / 1000) + Math.floor(baseSeconds));
-                    const hours = Math.floor(diff / 3600);
-                    const minutes = Math.floor((diff % 3600) / 60);
-                    const seconds = diff % 60;
-                    timerValueEl.textContent = 
-                        `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-                } catch (err) {
-                    console.error('Timer update error:', err);
-                }
-            };
-            
-            updateTimer(); // Update immediately
-            timerInterval = setInterval(updateTimer, 1000);
+            timerInterval = setInterval(() => {
+                const now = new Date();
+                const diff = Math.max(0, Math.floor((now - startTime) / 1000) + Math.floor(baseSeconds));
+                const hours = Math.floor(diff / 3600);
+                const minutes = Math.floor((diff % 3600) / 60);
+                const seconds = diff % 60;
+                document.getElementById('timerValue').textContent = 
+                    `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+            }, 1000);
         }
 
         // Start timer
