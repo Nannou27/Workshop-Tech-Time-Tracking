@@ -939,12 +939,7 @@ router.get('/technician-performance',
           jcJoinExtra += ` AND jc.location_id = ${addParam(locId)}`;
         }
       }
-      if (startDay) {
-        jcJoinExtra += ` AND DATE(jc.created_at) >= ${addParam(startDay)}`;
-      }
-      if (endDay) {
-        jcJoinExtra += ` AND DATE(jc.created_at) <= ${addParam(endDay)}`;
-      }
+      // Date filtering: removed from jcJoinExtra (will be applied to time_logs instead)
 
       // If job_cards doesn't have business_unit_id, we enforce BU scoping via locations join (schema-tolerant)
       let locationsJoinExtra = '';
@@ -961,13 +956,23 @@ router.get('/technician-performance',
       const effectiveLocIdExpr = hasUserLocationId ? 'COALESCE(l.id, l_user.id)' : 'l.id';
       const effectiveLocNameExpr = hasUserLocationId ? "COALESCE(l.name, l_user.name, 'Unassigned')" : "COALESCE(l.name, 'Unassigned')";
 
+      // Time logs date filter (single source of truth: end_ts for finished work)
+      let tlDateFilter = '';
+      if (startDay && endDay) {
+        tlDateFilter = ` AND tl.status = 'finished' AND DATE(tl.end_ts) >= ${addParam(startDay)} AND DATE(tl.end_ts) <= ${addParam(endDay)}`;
+      } else if (startDay) {
+        tlDateFilter = ` AND tl.status = 'finished' AND DATE(tl.end_ts) >= ${addParam(startDay)}`;
+      } else if (endDay) {
+        tlDateFilter = ` AND tl.status = 'finished' AND DATE(tl.end_ts) <= ${addParam(endDay)}`;
+      } else {
+        tlDateFilter = ` AND tl.status = 'finished'`;
+      }
+
       let queryText = `
         SELECT 
           u.id as technician_id,
           u.display_name as technician_name,
           ${hasTechnicians ? 't.employee_code' : 'NULL'} as employee_code,
-          ${effectiveLocIdExpr} as location_id,
-          ${effectiveLocNameExpr} as location_name,
           ${hasBusinessUnits ? 'bu.id' : 'NULL'} as business_unit_id,
           ${hasBusinessUnits ? 'bu.name' : 'NULL'} as business_unit_name,
           COUNT(DISTINCT jc.id) as total_job_cards,
@@ -980,12 +985,10 @@ router.get('/technician-performance',
         FROM users u
         JOIN roles r ON u.role_id = r.id AND LOWER(r.name) = 'technician'
         ${hasTechnicians ? 'LEFT JOIN technicians t ON u.id = t.user_id' : ''}
+        ${hasUserBusinessUnitId && hasBusinessUnits ? 'LEFT JOIN business_units bu ON u.business_unit_id = bu.id' : ''}
         LEFT JOIN assignments a ON a.technician_id = u.id
         LEFT JOIN job_cards jc ON a.job_card_id = jc.id${jcJoinExtra}
-        LEFT JOIN locations l ON jc.location_id = l.id${locationsJoinExtra}
-        ${hasUserLocationId ? 'LEFT JOIN locations l_user ON u.location_id = l_user.id' : ''}
-        LEFT JOIN time_logs tl ON tl.assignment_id = a.id AND tl.job_card_id = jc.id AND tl.technician_id = u.id
-        ${buJoin}
+        LEFT JOIN time_logs tl ON tl.assignment_id = a.id AND tl.technician_id = u.id${tlDateFilter}
         WHERE ${activeCondition}
       `;
 
@@ -1050,8 +1053,8 @@ router.get('/technician-performance',
       }
 
       queryText += `
-        GROUP BY u.id, u.display_name ${hasTechnicians ? ', t.employee_code' : ''}, ${effectiveLocIdExpr}, ${effectiveLocNameExpr} ${hasBusinessUnits ? ', bu.id, bu.name' : ''}
-        ORDER BY location_name ASC, total_hours DESC
+        GROUP BY u.id, u.display_name ${hasTechnicians ? ', t.employee_code' : ''} ${hasBusinessUnits ? ', bu.id, bu.name' : ''}
+        ORDER BY total_hours DESC
       `;
 
       const result = await db.query(queryText, params);
