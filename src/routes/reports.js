@@ -180,33 +180,11 @@ router.get('/comprehensive', async (req, res, next) => {
     const fromDate = new Date(`${fromDay}T00:00:00.000Z`);
     const toDate = new Date(`${toDay}T23:59:59.999Z`);
     
-    // For completed items, group/filter by completion date if available (more accurate for week/month reporting).
-    // IMPORTANT: In some deployments completed_at exists but is NULL for most rows. Use COALESCE fallback.
-    let hasCompletedAt = false;
-    let hasUpdatedAt = false;
-    try {
-      if (dbType === 'mysql') {
-        hasCompletedAt = (await db.query(`SHOW COLUMNS FROM job_cards LIKE 'completed_at'`)).rows.length > 0;
-        hasUpdatedAt = (await db.query(`SHOW COLUMNS FROM job_cards LIKE 'updated_at'`)).rows.length > 0;
-    } else {
-        hasCompletedAt = (await db.query(
-          `SELECT column_name FROM information_schema.columns WHERE table_name = 'job_cards' AND column_name = 'completed_at'`
-        )).rows.length > 0;
-        hasUpdatedAt = (await db.query(
-          `SELECT column_name FROM information_schema.columns WHERE table_name = 'job_cards' AND column_name = 'updated_at'`
-        )).rows.length > 0;
-      }
-    } catch (e) {
-      hasCompletedAt = false;
-      hasUpdatedAt = false;
-    }
+    // Date source: use time_logs.end_ts for completed work (single source of truth)
+    const completedDateField = 'tl.end_ts';
+    const createdDateField = 'jc.created_at'; // For incomplete jobs only
 
-    const createdDateField = 'jc.created_at';
-    const completedDateField = hasCompletedAt
-      ? (hasUpdatedAt ? 'COALESCE(jc.completed_at, jc.updated_at, jc.created_at)' : 'COALESCE(jc.completed_at, jc.created_at)')
-      : 'jc.created_at';
-
-    // Build date grouping based on period (created vs completed)
+    // Build date grouping based on period
     const buildDateGrouping = (fieldExpr) => {
       if (period === 'day') {
         return `DATE(${fieldExpr})`;
@@ -234,7 +212,7 @@ router.get('/comprehensive', async (req, res, next) => {
       ? `EXISTS (SELECT 1 FROM assignments ax WHERE ax.job_card_id = jc.id AND ax.status = 'completed' LIMIT 1)`
       : `EXISTS (SELECT 1 FROM assignments ax WHERE ax.job_card_id = jc.id AND ax.status = 'completed')`;
 
-    // Get completed job cards with time details
+    // Get completed job cards with time details (date filtered by time_logs.end_ts)
     let completedQuery = `
       SELECT 
         ${dateGroupingCompleted} as period,
@@ -247,16 +225,16 @@ router.get('/comprehensive', async (req, res, next) => {
         jc.estimated_hours,
         jc.actual_hours,
         GROUP_CONCAT(DISTINCT CONCAT(u.display_name, ' (', t.employee_code, ')') SEPARATOR ', ') as technicians,
-        SUM(CASE WHEN tl.status IN ('finished','paused') THEN tl.duration_seconds ELSE 0 END) / 3600.0 as total_hours,
-        COUNT(DISTINCT CASE WHEN tl.status IN ('finished','paused') THEN tl.id END) as time_log_count
+        SUM(CASE WHEN tl.status = 'finished' THEN tl.duration_seconds ELSE 0 END) / 3600.0 as total_hours,
+        COUNT(DISTINCT CASE WHEN tl.status = 'finished' THEN tl.id END) as time_log_count
       FROM job_cards jc
       LEFT JOIN assignments a ON jc.id = a.job_card_id AND a.status != 'cancelled'
-      LEFT JOIN time_logs tl ON jc.id = tl.job_card_id
+      LEFT JOIN time_logs tl ON jc.id = tl.job_card_id AND tl.status = 'finished'
       LEFT JOIN technicians t ON COALESCE(a.technician_id, tl.technician_id) = t.user_id
       LEFT JOIN users u ON t.user_id = u.id
       WHERE (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})
-        AND ${completedDateField} >= ${dbType === 'mysql' ? '?' : '$1'}
-        AND ${completedDateField} <= ${dbType === 'mysql' ? '?' : '$2'}
+        AND DATE(${completedDateField}) >= ${dbType === 'mysql' ? '?' : '$1'}
+        AND DATE(${completedDateField}) <= ${dbType === 'mysql' ? '?' : '$2'}
     `;
     
     const params = [fromParam, toParam];
@@ -2287,13 +2265,7 @@ router.get('/technician-efficiency',
             : ` AND (uc.business_unit_id = $${3} OR uc.business_unit_id IS NULL OR jc.created_by IS NULL)`;
         }
 
-        // Date expression for job aggregation
-        const jcDateExpr = hasJobCardsCompletedAt
-          ? (hasJobCardsUpdatedAt ? `COALESCE(jc.completed_at, jc.updated_at, jc.created_at)` : `COALESCE(jc.completed_at, jc.created_at)`)
-          : (hasJobCardsUpdatedAt ? `COALESCE(jc.updated_at, jc.created_at)` : `jc.created_at`);
-        const jobAggDateExpr = hasAssignmentCompletedAt ? `COALESCE(a.completed_at, ${jcDateExpr})` : jcDateExpr;
-
-        // Jobs + billed hours
+        // Jobs + billed hours (use time_logs.end_ts for date filtering)
         let jobsParams = [];
         let jobsSql;
         if (dbType === 'mysql') {
@@ -2304,18 +2276,18 @@ router.get('/technician-efficiency',
               COALESCE(SUM(CASE WHEN a.status = 'completed' THEN jc.estimated_hours ELSE 0 END), 0) as total_billed_hours
             FROM assignments a
             JOIN job_cards jc ON a.job_card_id = jc.id
+            LEFT JOIN time_logs tl ON tl.assignment_id = a.id AND tl.status = 'finished'
             ${joinCreator}
             WHERE a.technician_id = ?
               AND a.status != 'cancelled'
               ${whereBU}
-              AND DATE(${jobAggDateExpr}) >= ?
-              AND DATE(${jobAggDateExpr}) <= ?
+              AND DATE(tl.end_ts) >= ?
+              AND DATE(tl.end_ts) <= ?
           `;
           jobsParams = [technician_id];
           if (buId && (hasJobCardsBU || (hasUsersBU && hasJobCardsCreatedBy))) jobsParams.push(buId);
           jobsParams.push(rangeStartDay, rangeEndDay);
         } else {
-          // PostgreSQL - build placeholders incrementally
           const paramsP = [technician_id];
           let idx = 1;
           let whereBUText = '';
@@ -2336,52 +2308,55 @@ router.get('/technician-efficiency',
               COALESCE(SUM(CASE WHEN a.status = 'completed' THEN jc.estimated_hours ELSE 0 END), 0) as total_billed_hours
             FROM assignments a
             JOIN job_cards jc ON a.job_card_id = jc.id
+            LEFT JOIN time_logs tl ON tl.assignment_id = a.id AND tl.status = 'finished'
             ${joinCreator}
             WHERE a.technician_id = $1
               AND a.status != 'cancelled'
               ${whereBUText}
-              AND DATE(${jobAggDateExpr}) >= $${idx - 1}
-              AND DATE(${jobAggDateExpr}) <= $${idx}
+              AND DATE(tl.end_ts) >= $${idx - 1}
+              AND DATE(tl.end_ts) <= $${idx}
           `;
           jobsParams = paramsP;
         }
         const jobsResult = await db.query(jobsSql, jobsParams);
 
-        // Worked hours from time logs (paused/finished) in range
+        // Worked hours from time logs (finished only, filtered by end_ts)
         const workedSql = dbType === 'mysql'
           ? `
             SELECT COALESCE(SUM(
               CASE
-                WHEN status IN ('finished','paused') THEN
+                WHEN status = 'finished' THEN
                   CASE
                     WHEN duration_seconds > 0 THEN duration_seconds
                     WHEN end_ts IS NOT NULL THEN TIMESTAMPDIFF(SECOND, start_ts, end_ts)
-                ELSE 0
-              END
+                    ELSE 0
+                  END
                 ELSE 0
               END
             ), 0) / 3600.0 as total_worked_hours
             FROM time_logs
             WHERE technician_id = ?
-              AND DATE(start_ts) >= ?
-              AND DATE(start_ts) <= ?
+              AND status = 'finished'
+              AND DATE(end_ts) >= ?
+              AND DATE(end_ts) <= ?
           `
           : `
             SELECT COALESCE(SUM(
               CASE
-                WHEN status IN ('finished','paused') THEN
+                WHEN status = 'finished' THEN
                   CASE
                     WHEN duration_seconds > 0 THEN duration_seconds
                     WHEN end_ts IS NOT NULL THEN EXTRACT(EPOCH FROM (end_ts - start_ts))
-                      ELSE 0
-                    END
-            ELSE 0
+                    ELSE 0
+                  END
+                ELSE 0
               END
             ), 0) / 3600.0 as total_worked_hours
             FROM time_logs
             WHERE technician_id = $1
-              AND DATE(start_ts) >= $2
-              AND DATE(start_ts) <= $3
+              AND status = 'finished'
+              AND DATE(end_ts) >= $2
+              AND DATE(end_ts) <= $3
           `;
         const workedResult = await db.query(workedSql, [technician_id, rangeStartDay, rangeEndDay]);
 
@@ -2637,25 +2612,7 @@ router.get('/technician-efficiency',
         }
       } catch (e) { hasUpdatedAt = true; }
 
-      const jobDateExpr = hasCompletedAt
-        ? (hasUpdatedAt ? `COALESCE(jc.completed_at, jc.updated_at, jc.created_at)` : `COALESCE(jc.completed_at, jc.created_at)`)
-        : (hasUpdatedAt ? `COALESCE(jc.updated_at, jc.created_at)` : `jc.created_at`);
-
-      // assignments.completed_at is more reliable for "when tech finished" than job_cards.status
-      let hasAssignmentCompletedAt = false;
-      try {
-        if (dbType === 'mysql') {
-          hasAssignmentCompletedAt = (await db.query(`SHOW COLUMNS FROM assignments LIKE 'completed_at'`)).rows.length > 0;
-        } else {
-          hasAssignmentCompletedAt = (await db.query(
-            `SELECT column_name FROM information_schema.columns WHERE table_name = 'assignments' AND column_name = 'completed_at'`
-          )).rows.length > 0;
-        }
-      } catch (e) { hasAssignmentCompletedAt = false; }
-
-      const jobAggDateExpr = hasAssignmentCompletedAt
-        ? `COALESCE(a.completed_at, ${jobDateExpr})`
-        : jobDateExpr;
+      // Date filtering for aggregates: removed (using time_logs.end_ts in WHERE clause instead)
 
       let hasShiftBreakSeconds = false;
       if (hasShiftsTable) {
@@ -2788,11 +2745,12 @@ router.get('/technician-efficiency',
             } THEN 1 ELSE 0 END), 0) as repeat_jobs
           FROM assignments a
           JOIN job_cards jc ON a.job_card_id = jc.id
+          LEFT JOIN time_logs tl_job ON tl_job.assignment_id = a.id AND tl_job.status = 'finished'
           ${jobsJoinCreator}
           WHERE a.status != 'cancelled'
             ${jobsWhereBU}
-            AND DATE(${jobAggDateExpr}) >= ${p(rangeStartDay)}
-            AND DATE(${jobAggDateExpr}) <= ${p(rangeEndDay)}
+            AND DATE(tl_job.end_ts) >= ${p(rangeStartDay)}
+            AND DATE(tl_job.end_ts) <= ${p(rangeEndDay)}
           GROUP BY a.technician_id
         ) j ON j.technician_id = t.user_id
         LEFT JOIN (
@@ -2805,7 +2763,7 @@ router.get('/technician-efficiency',
             technician_id,
             COALESCE(SUM(
               CASE
-                WHEN status IN ('finished','paused') THEN
+                WHEN status = 'finished' THEN
                   CASE
                     WHEN duration_seconds > 0 THEN duration_seconds
                     WHEN end_ts IS NOT NULL THEN ${dbType === 'mysql' ? 'TIMESTAMPDIFF(SECOND, start_ts, end_ts)' : "EXTRACT(EPOCH FROM (end_ts - start_ts))"}
@@ -2816,23 +2774,25 @@ router.get('/technician-efficiency',
             ), 0) / 3600.0 as total_worked_hours,
             COALESCE(SUM(
               CASE
-                WHEN status IN ('finished','paused') THEN
+                WHEN status = 'finished'
+                  AND EXISTS (
+                    SELECT 1 FROM assignments a_check
+                    WHERE a_check.id = tl_agg.assignment_id AND a_check.status = 'completed'
+                  )
+                THEN
                   CASE
-                    WHEN duration_seconds > 0 THEN duration_seconds
-                    WHEN end_ts IS NOT NULL THEN ${dbType === 'mysql' ? 'TIMESTAMPDIFF(SECOND, start_ts, end_ts)' : "EXTRACT(EPOCH FROM (end_ts - start_ts))"}
+                    WHEN tl_agg.duration_seconds > 0 THEN tl_agg.duration_seconds
+                    WHEN tl_agg.end_ts IS NOT NULL THEN ${dbType === 'mysql' ? 'TIMESTAMPDIFF(SECOND, tl_agg.start_ts, tl_agg.end_ts)' : "EXTRACT(EPOCH FROM (tl_agg.end_ts - tl_agg.start_ts))"}
                     ELSE 0
                   END
                 ELSE 0
               END
             ), 0) / 3600.0 as worked_hours_completed_only
-          FROM time_logs tl_inner
-          WHERE DATE(tl_inner.start_ts) >= ${p(rangeStartDay)} AND DATE(tl_inner.start_ts) <= ${p(rangeEndDay)}
-            AND EXISTS (
-              SELECT 1 FROM assignments a_inner
-              WHERE a_inner.id = tl_inner.assignment_id
-                AND a_inner.status = 'completed'
-            )
-          GROUP BY technician_id
+          FROM time_logs tl_agg
+          WHERE tl_agg.status = 'finished'
+            AND DATE(tl_agg.end_ts) >= ${p(rangeStartDay)} 
+            AND DATE(tl_agg.end_ts) <= ${p(rangeEndDay)}
+          GROUP BY tl_agg.technician_id
         ) tl ON tl.technician_id = t.user_id
         ${hasShiftsTable ? `LEFT JOIN (
           SELECT
