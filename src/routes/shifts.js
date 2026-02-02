@@ -616,6 +616,45 @@ router.post('/clock-out', async (req, res, next) => {
   }
 });
 
+// GET /api/v1/shifts/me - Get current shift state (for debugging and UI)
+router.get('/me', async (req, res, next) => {
+  try {
+    const dbType = process.env.DB_TYPE || 'postgresql';
+    const placeholder = dbType === 'mysql' ? '?' : '$1';
+    
+    const shiftResult = await db.query(
+      `SELECT id, technician_id, clock_in_time, clock_out_time, break_start_time, break_seconds
+       FROM technician_shifts 
+       WHERE technician_id = ${placeholder} AND clock_out_time IS NULL
+       ORDER BY clock_in_time DESC LIMIT 1`,
+      [req.user.id]
+    );
+
+    if (shiftResult.rows.length === 0) {
+      return res.json({
+        shift_active: false,
+        message: 'No active shift'
+      });
+    }
+
+    const shift = shiftResult.rows[0];
+    const breakActive = shift.break_start_time != null && shift.break_start_time !== '';
+
+    res.json({
+      shift_id: shift.id,
+      shift_active: true,
+      clock_in_time: shift.clock_in_time,
+      clock_out_time: shift.clock_out_time,
+      break_start_time: shift.break_start_time,
+      break_seconds: shift.break_seconds,
+      break_active: breakActive
+    });
+  } catch (error) {
+    logger.error('Get shift/me error:', error);
+    next(error);
+  }
+});
+
 // POST /api/v1/shifts/start-break - Start break (pause shift timer)
 router.post('/start-break', async (req, res, next) => {
   try {

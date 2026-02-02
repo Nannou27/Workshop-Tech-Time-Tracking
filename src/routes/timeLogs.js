@@ -45,33 +45,35 @@ async function columnExists(tableName, columnName) {
 }
 
 // Helper: check if technician currently has an active break
-// SIMPLIFIED: Check break_start_time IS NOT NULL (if column exists), otherwise always allow (fail-open)
+// Single source of truth: active shift row with break_start_time IS NOT NULL
 async function hasActiveBreak(technicianId) {
   try {
     const dbType = process.env.DB_TYPE || 'postgresql';
     const shiftPh = dbType === 'mysql' ? '?' : '$1';
     
-    // Direct query: if break_start_time exists and is NOT NULL, break is active
+    // Query the current active shift
     const shiftResult = await db.query(
-      `SELECT break_start_time FROM technician_shifts 
-       WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
+      `SELECT id, clock_out_time, break_start_time FROM technician_shifts 
+       WHERE technician_id = ${shiftPh} 
+         AND clock_out_time IS NULL
        ORDER BY clock_in_time DESC LIMIT 1`,
       [technicianId]
     );
 
     if (shiftResult.rows.length === 0) {
-      logger.info(`[BREAK-CHECK] No active shift for technician ${technicianId}, allowing timer`);
+      logger.info(`[BREAK-CHECK] techId=${technicianId} shiftId=null clock_out=null break_start=null break_end=null breakActive=false (no active shift)`);
       return false;
     }
 
     const shift = shiftResult.rows[0];
+    // Break is active if break_start_time is NOT NULL
     const breakActive = shift.break_start_time != null && shift.break_start_time !== '';
     
-    logger.info(`[BREAK-CHECK] Technician ${technicianId} - break_start_time: ${shift.break_start_time}, breakActive: ${breakActive}`);
+    logger.info(`[BREAK-CHECK] techId=${technicianId} shiftId=${shift.id} clock_out=${shift.clock_out_time} break_start=${shift.break_start_time} breakActive=${breakActive}`);
     return breakActive;
   } catch (err) {
-    // If break_start_time column doesn't exist, the query will fail - that's OK, allow (backward compat)
-    logger.warn(`[BREAK-CHECK] Could not check break state (column may not exist): ${err.message}`);
+    // If query fails (e.g., column doesn't exist), log and fail-open for backward compat
+    logger.error(`[BREAK-CHECK] Error checking break state: ${err.message}`);
     return false;
   }
 }
