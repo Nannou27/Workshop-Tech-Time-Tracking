@@ -45,15 +45,15 @@ async function columnExists(tableName, columnName) {
 }
 
 // Helper: check if technician currently has an active break
-// Single source of truth: active shift row with break_start_time IS NOT NULL
+// Schema-compatible: uses break_start_time column if exists, otherwise notes JSON
 async function hasActiveBreak(technicianId) {
   try {
     const dbType = process.env.DB_TYPE || 'postgresql';
     const shiftPh = dbType === 'mysql' ? '?' : '$1';
     
-    // Query the current active shift
+    // Query active shift (only columns guaranteed to exist)
     const shiftResult = await db.query(
-      `SELECT id, clock_out_time, break_start_time FROM technician_shifts 
+      `SELECT id, clock_out_time, notes FROM technician_shifts 
        WHERE technician_id = ${shiftPh} 
          AND clock_out_time IS NULL
        ORDER BY clock_in_time DESC LIMIT 1`,
@@ -61,20 +61,39 @@ async function hasActiveBreak(technicianId) {
     );
 
     if (shiftResult.rows.length === 0) {
-      logger.info(`[BREAK-CHECK] techId=${technicianId} shiftId=null clock_out=null break_start=null break_end=null breakActive=false (no active shift)`);
+      logger.info(`[BREAK-CHECK] techId=${technicianId} no active shift, breakActive=false`);
       return false;
     }
 
     const shift = shiftResult.rows[0];
-    // Break is active if break_start_time is NOT NULL
-    const breakActive = shift.break_start_time != null && shift.break_start_time !== '';
     
-    logger.info(`[BREAK-CHECK] techId=${technicianId} shiftId=${shift.id} clock_out=${shift.clock_out_time} break_start=${shift.break_start_time} breakActive=${breakActive}`);
+    // Check if break_start_time column exists (optional migration)
+    const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
+    let breakStartIso = null;
+    
+    if (hasBreakStartColumn) {
+      // Re-query with break_start_time column (only if it exists)
+      const shiftWithBreakResult = await db.query(
+        `SELECT break_start_time FROM technician_shifts WHERE id = ${dbType === 'mysql' ? '?' : '$1'}`,
+        [shift.id]
+      );
+      breakStartIso = shiftWithBreakResult.rows[0]?.break_start_time || null;
+    } else {
+      // Fallback: check notes JSON (used when column doesn't exist)
+      try {
+        const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
+        breakStartIso = notesObj?.break_state?.start_time || null;
+      } catch (e) {
+        breakStartIso = null;
+      }
+    }
+    
+    const breakActive = breakStartIso != null && breakStartIso !== '';
+    logger.info(`[BREAK-CHECK] techId=${technicianId} shiftId=${shift.id} break_start=${breakStartIso} breakActive=${breakActive}`);
     return breakActive;
   } catch (err) {
-    // If query fails (e.g., column doesn't exist), log and fail-open for backward compat
     logger.error(`[BREAK-CHECK] Error checking break state: ${err.message}`);
-    return false;
+    return false; // Fail-open on error
   }
 }
 
@@ -349,20 +368,11 @@ router.post('/start',
         }
 
         // HARD GUARD: Immediately before INSERT, check for active break (invariant enforcement)
-        // Rule: If break is active, number of active time_logs MUST be zero.
-        const breakCheckPh = dbType === 'mysql' ? '?' : '$1';
-        const breakCheckResult = await db.query(
-          `SELECT 1 FROM technician_shifts
-           WHERE technician_id = ${breakCheckPh}
-             AND clock_out_time IS NULL
-             AND break_start_time IS NOT NULL
-           LIMIT 1`,
-          [technicianId]
-        );
-        
-        if (breakCheckResult.rows.length > 0) {
+        // INVARIANT: If break is active, active time_logs MUST be zero.
+        const onBreakNow = await hasActiveBreak(technicianId);
+        if (onBreakNow) {
           await redis.releaseLock(lockKey);
-          logger.warn(`[TIMER-START] BLOCKED at INSERT: Technician ${technicianId} has active break, cannot create time_log`);
+          logger.warn(`[TIMER-START] BLOCKED at INSERT: Technician ${technicianId} has active break`);
           return res.status(409).json({
             error: {
               code: 'ON_BREAK',
@@ -617,20 +627,11 @@ router.post('/:id/resume',
       }
     }
 
-    // HARD GUARD: Immediately before INSERT, check for active break (last-line defense)
-    // INVARIANT: If break is active, number of active time_logs MUST be zero.
-    const breakCheckPh = dbType === 'mysql' ? '?' : '$1';
-    const breakCheckResult = await db.query(
-      `SELECT 1 FROM technician_shifts
-       WHERE technician_id = ${breakCheckPh}
-         AND clock_out_time IS NULL
-         AND break_start_time IS NOT NULL
-       LIMIT 1`,
-      [technicianId]
-    );
-    
-    if (breakCheckResult.rows.length > 0) {
-      logger.warn(`[TIMER-RESUME] BLOCKED at INSERT: Technician ${technicianId} has active break, cannot create time_log`);
+    // HARD GUARD: Immediately before INSERT, check for active break (invariant enforcement)
+    // INVARIANT: If break is active, active time_logs MUST be zero.
+    const onBreakNow = await hasActiveBreak(technicianId);
+    if (onBreakNow) {
+      logger.warn(`[TIMER-RESUME] BLOCKED at INSERT: Technician ${technicianId} has active break`);
       return res.status(409).json({
         error: {
           code: 'ON_BREAK',

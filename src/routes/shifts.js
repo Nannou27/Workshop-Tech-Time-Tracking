@@ -622,8 +622,9 @@ router.get('/me', async (req, res, next) => {
     const dbType = process.env.DB_TYPE || 'postgresql';
     const placeholder = dbType === 'mysql' ? '?' : '$1';
     
+    // Query active shift (only guaranteed columns)
     const shiftResult = await db.query(
-      `SELECT id, technician_id, clock_in_time, clock_out_time, break_start_time, break_seconds
+      `SELECT id, technician_id, clock_in_time, clock_out_time, break_seconds, notes
        FROM technician_shifts 
        WHERE technician_id = ${placeholder} AND clock_out_time IS NULL
        ORDER BY clock_in_time DESC LIMIT 1`,
@@ -638,16 +639,38 @@ router.get('/me', async (req, res, next) => {
     }
 
     const shift = shiftResult.rows[0];
-    const breakActive = shift.break_start_time != null && shift.break_start_time !== '';
+    
+    // Check break state (schema-compatible)
+    const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
+    let breakStartIso = null;
+    
+    if (hasBreakStartColumn) {
+      const breakQuery = await db.query(
+        `SELECT break_start_time FROM technician_shifts WHERE id = ${placeholder}`,
+        [shift.id]
+      );
+      breakStartIso = breakQuery.rows[0]?.break_start_time || null;
+    } else {
+      // Fallback: notes JSON
+      try {
+        const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
+        breakStartIso = notesObj?.break_state?.start_time || null;
+      } catch (e) {
+        breakStartIso = null;
+      }
+    }
+    
+    const breakActive = breakStartIso != null && breakStartIso !== '';
 
     res.json({
       shift_id: shift.id,
       shift_active: true,
       clock_in_time: shift.clock_in_time,
       clock_out_time: shift.clock_out_time,
-      break_start_time: shift.break_start_time,
+      break_start_time: breakStartIso,
       break_seconds: shift.break_seconds,
-      break_active: breakActive
+      break_active: breakActive,
+      schema_note: hasBreakStartColumn ? 'uses break_start_time column' : 'uses notes JSON'
     });
   } catch (error) {
     logger.error('Get shift/me error:', error);
