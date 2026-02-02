@@ -2667,6 +2667,7 @@ router.get('/technician-efficiency',
           COALESCE(j.rework_jobs, 0) as rework_jobs,
           COALESCE(j.repeat_jobs, 0) as repeat_jobs,
           COALESCE(tl.total_worked_hours, 0) as total_worked_hours,
+          COALESCE(tl.worked_hours_completed_only, 0) as worked_hours_completed_only,
           COALESCE(sh.total_shift_hours, 0) as total_shift_hours
         FROM technicians t
         JOIN users u ON t.user_id = u.id
