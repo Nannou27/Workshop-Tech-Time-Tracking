@@ -28,6 +28,10 @@ jobs:
       # -------------------------
       - name: Checkout code
         uses: actions/checkout@v4
+      
+      - name: Get current time
+        id: current_time
+        run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
 
       # -------------------------
       # AWS Auth (OIDC)
@@ -59,10 +63,6 @@ jobs:
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
-      
-      - name: Get current time
-        id: current_time
-        run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
 
       # -------------------------
       # Kubernetes Access
