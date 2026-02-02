@@ -10,6 +10,10 @@ on:
   #     - server.js
   workflow_dispatch: # Manual trigger only - comment out push to re-enable auto-deploy
 
+concurrency:
+  group: non-prod-deploy
+  cancel-in-progress: true
+
 env:
   AWS_REGION: ap-south-1
   CLUSTER_NAME: legend-cluster
