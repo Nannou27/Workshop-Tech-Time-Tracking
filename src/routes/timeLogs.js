@@ -45,54 +45,34 @@ async function columnExists(tableName, columnName) {
 }
 
 // Helper: check if technician currently has an active break
+// SIMPLIFIED: Check break_start_time IS NOT NULL (if column exists), otherwise always allow (fail-open)
 async function hasActiveBreak(technicianId) {
   try {
     const dbType = process.env.DB_TYPE || 'postgresql';
-    const shiftsTableExists = await tableExists('technician_shifts');
-    if (!shiftsTableExists) {
-      logger.warn('[BREAK-CHECK] technician_shifts table does not exist, cannot check break state');
-      return false; // Fail-open for backward compat with old schema
-    }
-
     const shiftPh = dbType === 'mysql' ? '?' : '$1';
+    
+    // Direct query: if break_start_time exists and is NOT NULL, break is active
     const shiftResult = await db.query(
-      `SELECT id, break_start_time, notes FROM technician_shifts 
+      `SELECT break_start_time FROM technician_shifts 
        WHERE technician_id = ${shiftPh} AND clock_out_time IS NULL
        ORDER BY clock_in_time DESC LIMIT 1`,
       [technicianId]
     );
 
     if (shiftResult.rows.length === 0) {
-      logger.info(`[BREAK-CHECK] No active shift for technician ${technicianId}`);
+      logger.info(`[BREAK-CHECK] No active shift for technician ${technicianId}, allowing timer`);
       return false;
     }
 
     const shift = shiftResult.rows[0];
-    logger.info(`[BREAK-CHECK] Shift ${shift.id} - break_start_time: ${shift.break_start_time}`);
-
-    const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
-    let breakStartIso = null;
-
-    if (hasBreakStartColumn && shift.break_start_time) {
-      breakStartIso = shift.break_start_time;
-      logger.info(`[BREAK-CHECK] Break active via column: ${breakStartIso}`);
-    } else if (shift.notes) {
-      try {
-        const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
-        const noteBreakStart = notesObj?.break_state?.start_time || null;
-        logger.info(`[BREAK-CHECK] Break check via notes - break_state.start_time: ${noteBreakStart}`);
-        breakStartIso = noteBreakStart;
-      } catch (e) {
-        logger.warn(`[BREAK-CHECK] Could not parse notes for break state: ${e.message}`);
-      }
-    }
-
-    const isOnBreak = !!breakStartIso;
-    logger.info(`[BREAK-CHECK] Result for technician ${technicianId}: isOnBreak=${isOnBreak}`);
-    return isOnBreak;
+    const breakActive = shift.break_start_time != null && shift.break_start_time !== '';
+    
+    logger.info(`[BREAK-CHECK] Technician ${technicianId} - break_start_time: ${shift.break_start_time}, breakActive: ${breakActive}`);
+    return breakActive;
   } catch (err) {
-    logger.error('[BREAK-CHECK] Error checking break state:', err);
-    return false; // Fail-open on error
+    // If break_start_time column doesn't exist, the query will fail - that's OK, allow (backward compat)
+    logger.warn(`[BREAK-CHECK] Could not check break state (column may not exist): ${err.message}`);
+    return false;
   }
 }
 
