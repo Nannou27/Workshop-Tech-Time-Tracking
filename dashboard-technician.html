@@ -522,6 +522,7 @@
 
         // Start timer
         async function startTimer(assignmentId) {
+            console.log('[DEBUG-START-TIMER] URL:', `${API_BASE_URL}/timelogs/start`, 'Assignment:', assignmentId);
             try {
                 const response = await apiFetch(`${API_BASE_URL}/timelogs/start`, {
                     method: 'POST',
@@ -532,6 +533,7 @@
                     body: JSON.stringify({ assignment_id: assignmentId })
                 });
                 const data = await response.json();
+                console.log('[DEBUG-START-TIMER] Status:', response.status, 'Headers:', Object.fromEntries(response.headers.entries()), 'Body:', data);
                 if (response.ok) {
                     loadActiveTimer();
                     loadAssignments();
@@ -544,16 +546,22 @@
                     }
                 }
             } catch (error) {
+                console.error('[DEBUG-START-TIMER] Exception:', error);
                 alert('Error starting timer: ' + error.message);
             }
         }
 
         // Resume timer from last paused segment (or start a new segment if none exists)
         async function resumeTimer(assignmentId, pausedTimeLogId) {
+            const url = pausedTimeLogId 
+                ? `${API_BASE_URL}/timelogs/${pausedTimeLogId}/resume`
+                : `${API_BASE_URL}/timelogs/start`;
+            console.log('[DEBUG-RESUME-TIMER] URL:', url, 'Assignment:', assignmentId, 'PausedLogId:', pausedTimeLogId);
+            
             try {
                 let response;
                 if (pausedTimeLogId) {
-                    response = await apiFetch(`${API_BASE_URL}/timelogs/${pausedTimeLogId}/resume`, {
+                    response = await apiFetch(url, {
                         method: 'POST',
                         headers: {
                             'Authorization': `Bearer ${accessToken}`,
@@ -562,7 +570,7 @@
                         body: JSON.stringify({ notes: 'Resumed' })
                     });
                 } else {
-                    response = await apiFetch(`${API_BASE_URL}/timelogs/start`, {
+                    response = await apiFetch(url, {
                         method: 'POST',
                         headers: {
                             'Authorization': `Bearer ${accessToken}`,
@@ -573,6 +581,8 @@
                 }
 
                 const data = await response.json().catch(() => ({}));
+                console.log('[DEBUG-RESUME-TIMER] Status:', response.status, 'Headers:', Object.fromEntries(response.headers.entries()), 'Body:', data);
+                
                 if (response.ok) {
                     loadActiveTimer();
                     loadAssignments();
@@ -585,6 +595,7 @@
                     }
                 }
             } catch (error) {
+                console.error('[DEBUG-RESUME-TIMER] Exception:', error);
                 alert('Error resuming timer: ' + error.message);
             }
         }
@@ -977,9 +988,8 @@
 
         // Start break
         async function startBreak() {
-            console.log('[BREAK] startBreak() called');
+            console.log('[DEBUG-START-BREAK] URL:', `${API_BASE_URL}/shifts/start-break`);
             try {
-                console.log('[BREAK] Calling API:', `${API_BASE_URL}/shifts/start-break`);
                 const response = await apiFetch(`${API_BASE_URL}/shifts/start-break`, {
                     method: 'POST',
                     headers: {
@@ -988,26 +998,26 @@
                     }
                 });
                 
-                console.log('[BREAK] API response status:', response.status, response.ok);
+                const data = await response.json().catch(() => ({}));
+                console.log('[DEBUG-START-BREAK] Status:', response.status, 'Headers:', Object.fromEntries(response.headers.entries()), 'Body:', data);
                 
                 if (response.ok) {
-                    console.log('[BREAK] Break started successfully, refreshing UI');
                     await loadActiveShift();
-                    await loadActiveTimer(); // Refresh timer display (timers auto-paused on break)
-                    await loadAssignments(); // Refresh job cards to show paused state
+                    await loadActiveTimer();
+                    await loadAssignments();
                 } else {
-                    const data = await response.json();
-                    console.error('[BREAK] Error response:', data);
+                    console.error('[DEBUG-START-BREAK] Error:', data);
                     alert('Error starting break: ' + (data.error?.message || 'Unknown error'));
                 }
             } catch (error) {
-                console.error('[BREAK] Exception:', error);
+                console.error('[DEBUG-START-BREAK] Exception:', error);
                 alert('Error starting break: ' + error.message);
             }
         }
 
         // End break
         async function endBreak() {
+            console.log('[DEBUG-END-BREAK] URL:', `${API_BASE_URL}/shifts/end-break`);
             try {
                 const response = await apiFetch(`${API_BASE_URL}/shifts/end-break`, {
                     method: 'POST',
@@ -1018,15 +1028,18 @@
                 });
 
                 const data = await response.json().catch(() => ({}));
+                console.log('[DEBUG-END-BREAK] Status:', response.status, 'Headers:', Object.fromEntries(response.headers.entries()), 'Body:', data);
 
                 if (response.ok) {
                     await loadActiveShift();
-                    await loadActiveTimer(); // Refresh timer display
-                    await loadAssignments(); // Refresh job cards
+                    await loadActiveTimer();
+                    await loadAssignments();
                 } else {
+                    console.error('[DEBUG-END-BREAK] Error:', data);
                     alert('Error ending break: ' + (data.error?.message || 'Unknown error'));
                 }
             } catch (error) {
+                console.error('[DEBUG-END-BREAK] Exception:', error);
                 alert('Error ending break: ' + error.message);
             }
         }
