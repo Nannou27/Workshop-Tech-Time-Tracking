@@ -1,4 +1,4 @@
-name: Deploy Non-Prod
+name: NON-PROD - Workshop Time Tracking – Deploy
 
 on:
   workflow_dispatch:
@@ -7,19 +7,20 @@ concurrency:
   group: non-prod-deploy
   cancel-in-progress: true
 
+env:
+  AWS_REGION: ap-south-1
+  CLUSTER_NAME: legend-cluster
+  NAMESPACE: non-prod
+  ECR_REPOSITORY: workshop-time-tracking
+  ECR_REGISTRY: 149681870207.dkr.ecr.ap-south-1.amazonaws.com
+
 jobs:
-  deploy:
+  build-and-deploy:
+    name: Build & Deploy Workshop Time Tracking (Non-Prod)
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
-    
-    env:
-      AWS_REGION: ap-south-1
-      CLUSTER_NAME: legend-cluster
-      NAMESPACE: non-prod
-      ECR_REPOSITORY: workshop-time-tracking
-      ECR_REGISTRY: 149681870207.dkr.ecr.ap-south-1.amazonaws.com
 
     steps:
       # -------------------------
