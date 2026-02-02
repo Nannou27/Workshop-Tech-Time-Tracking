@@ -233,7 +233,7 @@ router.get('/comprehensive', async (req, res, next) => {
       LEFT JOIN technicians t ON COALESCE(a.technician_id, tl.technician_id) = t.user_id
       LEFT JOIN users u ON t.user_id = u.id
       WHERE (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})
-        AND tl.end_ts IS NOT NULL
+        AND tl.id IS NOT NULL
         AND DATE(tl.end_ts) >= ${dbType === 'mysql' ? '?' : '$1'}
         AND DATE(tl.end_ts) <= ${dbType === 'mysql' ? '?' : '$2'}
     `;
@@ -2723,6 +2723,7 @@ router.get('/technician-efficiency',
           ${jobsJoinCreator}
           WHERE a.status != 'cancelled'
             ${jobsWhereBU}
+            AND tl_job.id IS NOT NULL
             AND DATE(tl_job.end_ts) >= ${p(rangeStartDay)}
             AND DATE(tl_job.end_ts) <= ${p(rangeEndDay)}
           GROUP BY a.technician_id
