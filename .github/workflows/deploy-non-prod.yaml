@@ -1,33 +1,25 @@
-name: NON-PROD - Workshop Time Tracking – Deploy
+name: Deploy Non-Prod
 
 on:
-  # push:
-  #   branches: [main]
-  #   paths:
-  #     - src/**
-  #     - Dockerfile
-  #     - package.json
-  #     - server.js
-  workflow_dispatch: # Manual trigger only - comment out push to re-enable auto-deploy
+  workflow_dispatch:
 
 concurrency:
   group: non-prod-deploy
   cancel-in-progress: true
 
-env:
-  AWS_REGION: ap-south-1
-  CLUSTER_NAME: legend-cluster
-  NAMESPACE: non-prod
-  ECR_REPOSITORY: workshop-time-tracking
-  ECR_REGISTRY: 149681870207.dkr.ecr.ap-south-1.amazonaws.com
-
 jobs:
-  build-and-deploy:
-    name: Build & Deploy Workshop Time Tracking (Non-Prod)
+  deploy:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: read
+    
+    env:
+      AWS_REGION: ap-south-1
+      CLUSTER_NAME: legend-cluster
+      NAMESPACE: non-prod
+      ECR_REPOSITORY: workshop-time-tracking
+      ECR_REGISTRY: 149681870207.dkr.ecr.ap-south-1.amazonaws.com
 
     steps:
       # -------------------------
