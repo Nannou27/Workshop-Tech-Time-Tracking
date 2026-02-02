@@ -919,20 +919,7 @@ router.get('/technician-performance',
       }
       // Date filtering: removed from jcJoinExtra (will be applied to time_logs instead)
 
-      // If job_cards doesn't have business_unit_id, we enforce BU scoping via locations join (schema-tolerant)
-      let locationsJoinExtra = '';
-      if (hasBU && !hasJobCardsBU && hasLocationsBU) {
-        locationsJoinExtra = ` AND l.business_unit_id = ${addParam(buId)}`;
-      }
-
-      const buJoin = hasBusinessUnits
-        ? (hasJobCardsBU
-          ? 'LEFT JOIN business_units bu ON jc.business_unit_id = bu.id'
-          : (hasLocationsBU ? 'LEFT JOIN business_units bu ON l.business_unit_id = bu.id' : ''))
-        : '';
-
-      const effectiveLocIdExpr = hasUserLocationId ? 'COALESCE(l.id, l_user.id)' : 'l.id';
-      const effectiveLocNameExpr = hasUserLocationId ? "COALESCE(l.name, l_user.name, 'Unassigned')" : "COALESCE(l.name, 'Unassigned')";
+      // Location and BU joins removed (not needed without location grouping)
 
       // Time logs date filter (single source of truth: end_ts for finished work)
       let tlDateFilter = '';
