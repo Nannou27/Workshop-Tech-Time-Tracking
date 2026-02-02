@@ -719,14 +719,18 @@
                                 </p>
                             ` : ''}
                         </div>
-                        ${assignment.status === 'assigned' && !isActive
-                            ? `<button class="btn-start" onclick="startTimer(${assignment.id})">Start Timer</button>`
-                            : isActive
-                                ? `<p style="color: var(--brand-primary); font-weight: bold;">⏱️ Timer Active</p>`
-                                : ((assignment.status === 'in_progress' || assignment.paused_time_log_id)
-                                    ? `<button class="btn-start" onclick="resumeTimer(${assignment.id}, ${assignment.paused_time_log_id || 'null'})">Resume Timer</button>`
-                                    : `<p style="color: #666;">${assignment.status === 'completed' ? '✅ Completed' : 'Timer not started'}</p>`
+                        ${assignment.status === 'completed'
+                            ? `<p style="color: var(--brand-primary); font-weight: bold;">✅ Completed</p>`
+                            : (assignment.status === 'assigned' && !isActive
+                                ? `<button class="btn-start" onclick="startTimer(${assignment.id})">Start Timer</button>`
+                                : (isActive
+                                    ? `<p style="color: var(--brand-primary); font-weight: bold;">⏱️ Timer Active</p>`
+                                    : ((assignment.status === 'in_progress' || assignment.paused_time_log_id)
+                                        ? `<button class="btn-start" onclick="resumeTimer(${assignment.id}, ${assignment.paused_time_log_id || 'null'})">Resume Timer</button>`
+                                        : `<p style="color: #666;">Timer not started</p>`
+                                    )
                                 )
+                            )
                         }
                     </div>
                 `;
