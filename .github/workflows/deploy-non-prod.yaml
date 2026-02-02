@@ -56,9 +56,16 @@ jobs:
           context: .
           file: Dockerfile
           push: true
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ steps.current_time.outputs.time }}
           tags: |
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
             ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+      
+      - name: Get current time
+        id: current_time
+        run: echo "time=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
 
       # -------------------------
       # Kubernetes Access
@@ -98,11 +105,17 @@ jobs:
       # -------------------------
       # Deploy Workshop Time Tracking
       # -------------------------
+      - name: Get current time
+        id: build_time
+        run: echo "timestamp=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_OUTPUT
+      
       - name: Deploy workshop-time-tracking (Non-Prod)
         run: |
           helm upgrade --install workshop-time-tracking \
             k8s-templates/charts/app-base \
             -f k8s-values/workshop-time-tracking/non-prod.yaml \
             --set image.tag=${{ github.sha }} \
+            --set env.GIT_SHA=${{ github.sha }} \
+            --set env.BUILD_TIME=${{ steps.build_time.outputs.timestamp }} \
             -n ${{ env.NAMESPACE }} \
             --create-namespace

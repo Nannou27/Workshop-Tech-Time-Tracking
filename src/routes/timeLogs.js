@@ -544,8 +544,10 @@ router.post('/:id/resume',
 
     // ENFORCE: Cannot resume job timer while on break (centralized check)
     const onBreak = await hasActiveBreak(technicianId);
+    logger.info(`[RESUME] techId=${technicianId}, breakActive=${onBreak}, pausedTimeLogId=${req.params.id}`);
+    
     if (onBreak) {
-      logger.warn(`[TIMER-RESUME] BLOCKED: Technician ${technicianId} attempted to resume timer while on break`);
+      logger.warn(`[RESUME] BLOCKED: Technician ${technicianId} attempted to resume timer while on break`);
       return res.status(409).json({
         error: {
           code: 'ON_BREAK',
@@ -553,6 +555,8 @@ router.post('/:id/resume',
         }
       });
     }
+    
+    logger.info(`[RESUME] Break check passed, allowing resume for technician ${technicianId}`);
 
     // ENFORCE: Check for existing active timer (unless multi-tasking enabled)
     let multiTaskingEnabled = false;

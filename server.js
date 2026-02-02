@@ -43,7 +43,6 @@ const partCategoriesRoutes = require('./src/routes/partCategories');
 const workOrderStageHistoryRoutes = require('./src/routes/workOrderStageHistory');
 const integrityRoutes = require('./src/routes/integrity');
 const brandingRoutes = require('./src/routes/branding');
-const debugRoutes = require('./src/routes/debug');
 
 // WebSocket handler
 const socketHandler = require('./src/websocket/handler');
@@ -85,14 +84,12 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Add commit SHA header for debugging (non-prod only)
-if (process.env.NODE_ENV !== 'production') {
-  app.use((req, res, next) => {
-    const commitSha = process.env.GIT_COMMIT || process.env.GITHUB_SHA || 'unknown';
-    res.setHeader('X-App-Commit', commitSha);
-    next();
-  });
-}
+// Add commit SHA header to all API responses (for deployment verification)
+app.use('/api', (req, res, next) => {
+  const commitSha = process.env.GIT_SHA || process.env.GITHUB_SHA || 'unknown';
+  res.setHeader('X-App-Commit', commitSha);
+  next();
+});
 
 // Serve static files (HTML, CSS, JS)
 app.use(express.static(path.join(__dirname, '.')));
@@ -154,6 +151,15 @@ app.get('/health', async (req, res) => {
   }
 });
 
+// Version endpoint (for deployment verification)
+app.get('/api/v1/version', (req, res) => {
+  res.json({
+    commit: process.env.GIT_SHA || process.env.GITHUB_SHA || 'unknown',
+    build_time: process.env.BUILD_TIME || 'unknown',
+    node_env: process.env.NODE_ENV || 'development'
+  });
+});
+
 // API Routes
 app.use(`/api/${API_VERSION}/auth`, authRoutes);
 app.use(`/api/${API_VERSION}/users`, userRoutes);
@@ -186,7 +192,6 @@ app.use(`/api/${API_VERSION}/part-categories`, partCategoriesRoutes);
 app.use(`/api/${API_VERSION}/work-order-stage-history`, workOrderStageHistoryRoutes);
 app.use(`/api/${API_VERSION}/integrity`, integrityRoutes);
 app.use(`/api/${API_VERSION}/branding`, brandingRoutes);
-app.use(`/api/${API_VERSION}/debug`, debugRoutes);
 
 // WebSocket connection handling
 io.use((socket, next) => {
