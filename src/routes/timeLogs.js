@@ -18,11 +18,8 @@ async function tableExists(tableName) {
       ? `SHOW TABLES LIKE '${tableName}'`
       : `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '${tableName}') as exists`;
     const result = await db.query(checkQuery);
-    const exists = dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
-    logger.info(`[TABLE-CHECK] ${tableName} exists: ${exists} (dbType: ${dbType})`);
-    return exists;
+    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
   } catch (error) {
-    logger.error(`[TABLE-CHECK] Error checking if ${tableName} exists:`, error);
     return false;
   }
 }
@@ -35,11 +32,8 @@ async function columnExists(tableName, columnName) {
       ? `SHOW COLUMNS FROM ${tableName} LIKE '${columnName}'`
       : `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '${tableName}' AND column_name = '${columnName}') as exists`;
     const result = await db.query(checkQuery);
-    const exists = dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
-    logger.info(`[COLUMN-CHECK] ${tableName}.${columnName} exists: ${exists}`);
-    return exists;
+    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
   } catch (error) {
-    logger.error(`[COLUMN-CHECK] Error checking if ${tableName}.${columnName} exists:`, error);
     return false;
   }
 }
@@ -51,9 +45,8 @@ async function hasActiveBreak(technicianId) {
     const dbType = process.env.DB_TYPE || 'postgresql';
     const shiftPh = dbType === 'mysql' ? '?' : '$1';
     
-    // Query active shift (only columns guaranteed to exist)
     const shiftResult = await db.query(
-      `SELECT id, clock_out_time, notes FROM technician_shifts 
+      `SELECT id, notes FROM technician_shifts 
        WHERE technician_id = ${shiftPh} 
          AND clock_out_time IS NULL
        ORDER BY clock_in_time DESC LIMIT 1`,
@@ -61,25 +54,20 @@ async function hasActiveBreak(technicianId) {
     );
 
     if (shiftResult.rows.length === 0) {
-      logger.info(`[BREAK-CHECK] techId=${technicianId} no active shift, breakActive=false`);
       return false;
     }
 
     const shift = shiftResult.rows[0];
-    
-    // Check if break_start_time column exists (optional migration)
     const hasBreakStartColumn = await columnExists('technician_shifts', 'break_start_time');
     let breakStartIso = null;
     
     if (hasBreakStartColumn) {
-      // Re-query with break_start_time column (only if it exists)
       const shiftWithBreakResult = await db.query(
         `SELECT break_start_time FROM technician_shifts WHERE id = ${dbType === 'mysql' ? '?' : '$1'}`,
         [shift.id]
       );
       breakStartIso = shiftWithBreakResult.rows[0]?.break_start_time || null;
     } else {
-      // Fallback: check notes JSON (used when column doesn't exist)
       try {
         const notesObj = typeof shift.notes === 'string' ? JSON.parse(shift.notes) : shift.notes;
         breakStartIso = notesObj?.break_state?.start_time || null;
@@ -88,12 +76,10 @@ async function hasActiveBreak(technicianId) {
       }
     }
     
-    const breakActive = breakStartIso != null && breakStartIso !== '';
-    logger.info(`[BREAK-CHECK] techId=${technicianId} shiftId=${shift.id} break_start=${breakStartIso} breakActive=${breakActive}`);
-    return breakActive;
+    return breakStartIso != null && breakStartIso !== '';
   } catch (err) {
-    logger.error(`[BREAK-CHECK] Error checking break state: ${err.message}`);
-    return false; // Fail-open on error
+    logger.error('Error checking break state:', err);
+    return false;
   }
 }
 
@@ -231,17 +217,16 @@ router.post('/start',
         });
       }
 
-      // ENFORCE: Cannot start/resume job timer while on break (centralized check)
-      const onBreak = await hasActiveBreak(technicianId);
-      if (onBreak) {
-        logger.warn(`[TIMER-START] BLOCKED: Technician ${technicianId} attempted to start timer while on break`);
-        return res.status(409).json({
-          error: {
-            code: 'ON_BREAK',
-            message: 'You cannot start a job timer while on break. Please end your break first.'
-          }
-        });
-      }
+    // Enforce: cannot start timer while on break
+    const onBreak = await hasActiveBreak(technicianId);
+    if (onBreak) {
+      return res.status(409).json({
+        error: {
+          code: 'ON_BREAK',
+          message: 'You cannot start a job timer while on break. Please end your break first.'
+        }
+      });
+    }
 
       // ENFORCE: Technician must be clocked in before starting a job timer.
       const shiftsTableExists = await tableExists('technician_shifts');
@@ -367,12 +352,10 @@ router.post('/start',
           }
         }
 
-        // HARD GUARD: Immediately before INSERT, check for active break (invariant enforcement)
-        // INVARIANT: If break is active, active time_logs MUST be zero.
+        // Enforce break/timer invariant: cannot have active timer while on break
         const onBreakNow = await hasActiveBreak(technicianId);
         if (onBreakNow) {
           await redis.releaseLock(lockKey);
-          logger.warn(`[TIMER-START] BLOCKED at INSERT: Technician ${technicianId} has active break`);
           return res.status(409).json({
             error: {
               code: 'ON_BREAK',
@@ -577,12 +560,9 @@ router.post('/:id/resume',
 
     const pausedTimeLog = pausedTimeLogResult.rows[0];
 
-    // ENFORCE: Cannot resume job timer while on break (centralized check)
+    // Enforce: cannot resume timer while on break
     const onBreak = await hasActiveBreak(technicianId);
-    logger.info(`[RESUME] techId=${technicianId}, breakActive=${onBreak}, pausedTimeLogId=${req.params.id}`);
-    
     if (onBreak) {
-      logger.warn(`[RESUME] BLOCKED: Technician ${technicianId} attempted to resume timer while on break`);
       return res.status(409).json({
         error: {
           code: 'ON_BREAK',
@@ -590,8 +570,6 @@ router.post('/:id/resume',
         }
       });
     }
-    
-    logger.info(`[RESUME] Break check passed, allowing resume for technician ${technicianId}`);
 
     // ENFORCE: Check for existing active timer (unless multi-tasking enabled)
     let multiTaskingEnabled = false;
@@ -627,18 +605,16 @@ router.post('/:id/resume',
       }
     }
 
-    // HARD GUARD: Immediately before INSERT, check for active break (invariant enforcement)
-    // INVARIANT: If break is active, active time_logs MUST be zero.
-    const onBreakNow = await hasActiveBreak(technicianId);
-    if (onBreakNow) {
-      logger.warn(`[TIMER-RESUME] BLOCKED at INSERT: Technician ${technicianId} has active break`);
-      return res.status(409).json({
-        error: {
-          code: 'ON_BREAK',
-          message: 'Cannot resume job timer while on break. Please end your break first.'
+        // Enforce break/timer invariant: cannot have active timer while on break
+        const onBreakNow = await hasActiveBreak(technicianId);
+        if (onBreakNow) {
+          return res.status(409).json({
+            error: {
+              code: 'ON_BREAK',
+              message: 'Cannot resume job timer while on break. Please end your break first.'
+            }
+          });
         }
-      });
-    }
 
     // Create new time log segment
     const notesValue = notes !== undefined ? notes : null;

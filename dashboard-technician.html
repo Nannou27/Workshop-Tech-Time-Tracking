@@ -416,9 +416,7 @@
                     activeTimer = data.data[0];
                     startTimerDisplay(activeTimer);
                 } else {
-                    // CRITICAL: Stop the old timer interval when there's no active timer
                     if (timerInterval) {
-                        console.log('[TIMER] Clearing interval (no active timer)');
                         clearInterval(timerInterval);
                         timerInterval = null;
                     }
@@ -435,31 +433,21 @@
 
         // Start timer display
         function startTimerDisplay(timer) {
-            console.log('[TIMER] startTimerDisplay called with:', timer);
-            
             const timerDisplayEl = document.getElementById('timerDisplay');
             const timerValueEl = document.getElementById('timerValue');
             const timerJobInfoEl = document.getElementById('timerJobInfo');
             const timerControlsEl = document.getElementById('timerControls');
             
-            console.log('[TIMER] Elements found:', {
-                timerDisplayEl: !!timerDisplayEl,
-                timerValueEl: !!timerValueEl,
-                timerJobInfoEl: !!timerJobInfoEl,
-                timerControlsEl: !!timerControlsEl
-            });
-            
             if (!timerDisplayEl || !timerValueEl) {
-                console.error('[TIMER] Critical elements missing, cannot start timer display');
                 return;
             }
             
             timerDisplayEl.classList.add('timer-active');
-            timerValueEl.style.display = 'block'; // Force visible
-            timerValueEl.style.visibility = 'visible'; // Force visible
-            timerValueEl.style.color = '#6f42c1'; // Force purple color (visible on white background)
-            timerValueEl.style.fontSize = '4em'; // Force size
-            timerValueEl.style.fontWeight = 'bold'; // Force weight
+            timerValueEl.style.display = 'block';
+            timerValueEl.style.visibility = 'visible';
+            timerValueEl.style.color = '#6f42c1';
+            timerValueEl.style.fontSize = '4em';
+            timerValueEl.style.fontWeight = 'bold';
             
             // Get job card details for asset info
             apiFetch(`${API_BASE_URL}/jobcards/${timer.job_card_id}`, { method: 'GET' })
@@ -475,7 +463,6 @@
                 if (timerJobInfoEl) timerJobInfoEl.innerHTML = jobInfo;
             })
             .catch(err => {
-                console.warn('[TIMER] Could not load job card details:', err);
                 if (timerJobInfoEl) timerJobInfoEl.textContent = `Job: ${timer.job_number} - ${timer.customer_name}`;
             });
             
@@ -487,42 +474,25 @@
             }
             
             const startTime = new Date(timer.start_ts);
-            console.log('[TIMER] Start time parsed:', startTime, 'from:', timer.start_ts);
-            
             const baseSeconds = Number.isFinite(Number(timer.accumulated_seconds))
                 ? Number(timer.accumulated_seconds)
                 : 0;
             
-            console.log('[TIMER] Base seconds:', baseSeconds);
+            if (timerInterval) clearInterval(timerInterval);
             
-            if (timerInterval) {
-                console.log('[TIMER] Clearing existing interval');
-                clearInterval(timerInterval);
-            }
-            
-            let updateCount = 0;
             timerInterval = setInterval(() => {
                 const now = new Date();
                 const diff = Math.max(0, Math.floor((now - startTime) / 1000) + Math.floor(baseSeconds));
                 const hours = Math.floor(diff / 3600);
                 const minutes = Math.floor((diff % 3600) / 60);
                 const seconds = diff % 60;
-                const timeStr = `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-                
-                if (updateCount < 3) {
-                    console.log('[TIMER] Update #' + updateCount + ':', timeStr, 'diff:', diff);
-                }
-                updateCount++;
-                
-                timerValueEl.textContent = timeStr;
+                timerValueEl.textContent = 
+                    `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
             }, 1000);
-            
-            console.log('[TIMER] Interval created, ID:', timerInterval);
         }
 
         // Start timer
         async function startTimer(assignmentId) {
-            console.log('[DEBUG-START-TIMER] URL:', `${API_BASE_URL}/timelogs/start`, 'Assignment:', assignmentId);
             try {
                 const response = await apiFetch(`${API_BASE_URL}/timelogs/start`, {
                     method: 'POST',
@@ -533,7 +503,6 @@
                     body: JSON.stringify({ assignment_id: assignmentId })
                 });
                 const data = await response.json();
-                console.log('[DEBUG-START-TIMER] Status:', response.status, 'Headers:', Object.fromEntries(response.headers.entries()), 'Body:', data);
                 if (response.ok) {
                     loadActiveTimer();
                     loadAssignments();
@@ -546,22 +515,16 @@
                     }
                 }
             } catch (error) {
-                console.error('[DEBUG-START-TIMER] Exception:', error);
                 alert('Error starting timer: ' + error.message);
             }
         }
 
         // Resume timer from last paused segment (or start a new segment if none exists)
         async function resumeTimer(assignmentId, pausedTimeLogId) {
-            const url = pausedTimeLogId 
-                ? `${API_BASE_URL}/timelogs/${pausedTimeLogId}/resume`
-                : `${API_BASE_URL}/timelogs/start`;
-            console.log('[DEBUG-RESUME-TIMER] URL:', url, 'Assignment:', assignmentId, 'PausedLogId:', pausedTimeLogId);
-            
             try {
                 let response;
                 if (pausedTimeLogId) {
-                    response = await apiFetch(url, {
+                    response = await apiFetch(`${API_BASE_URL}/timelogs/${pausedTimeLogId}/resume`, {
                         method: 'POST',
                         headers: {
                             'Authorization': `Bearer ${accessToken}`,
@@ -570,7 +533,7 @@
                         body: JSON.stringify({ notes: 'Resumed' })
                     });
                 } else {
-                    response = await apiFetch(url, {
+                    response = await apiFetch(`${API_BASE_URL}/timelogs/start`, {
                         method: 'POST',
                         headers: {
                             'Authorization': `Bearer ${accessToken}`,
@@ -581,8 +544,6 @@
                 }
 
                 const data = await response.json().catch(() => ({}));
-                console.log('[DEBUG-RESUME-TIMER] Status:', response.status, 'Headers:', Object.fromEntries(response.headers.entries()), 'Body:', data);
-                
                 if (response.ok) {
                     loadActiveTimer();
                     loadAssignments();
@@ -595,7 +556,6 @@
                     }
                 }
             } catch (error) {
-                console.error('[DEBUG-RESUME-TIMER] Exception:', error);
                 alert('Error resuming timer: ' + error.message);
             }
         }
@@ -988,7 +948,6 @@
 
         // Start break
         async function startBreak() {
-            console.log('[DEBUG-START-BREAK] URL:', `${API_BASE_URL}/shifts/start-break`);
             try {
                 const response = await apiFetch(`${API_BASE_URL}/shifts/start-break`, {
                     method: 'POST',
@@ -999,25 +958,20 @@
                 });
                 
                 const data = await response.json().catch(() => ({}));
-                console.log('[DEBUG-START-BREAK] Status:', response.status, 'Headers:', Object.fromEntries(response.headers.entries()), 'Body:', data);
-                
                 if (response.ok) {
                     await loadActiveShift();
                     await loadActiveTimer();
                     await loadAssignments();
                 } else {
-                    console.error('[DEBUG-START-BREAK] Error:', data);
                     alert('Error starting break: ' + (data.error?.message || 'Unknown error'));
                 }
             } catch (error) {
-                console.error('[DEBUG-START-BREAK] Exception:', error);
                 alert('Error starting break: ' + error.message);
             }
         }
 
         // End break
         async function endBreak() {
-            console.log('[DEBUG-END-BREAK] URL:', `${API_BASE_URL}/shifts/end-break`);
             try {
                 const response = await apiFetch(`${API_BASE_URL}/shifts/end-break`, {
                     method: 'POST',
@@ -1028,18 +982,14 @@
                 });
 
                 const data = await response.json().catch(() => ({}));
-                console.log('[DEBUG-END-BREAK] Status:', response.status, 'Headers:', Object.fromEntries(response.headers.entries()), 'Body:', data);
-
                 if (response.ok) {
                     await loadActiveShift();
                     await loadActiveTimer();
                     await loadAssignments();
                 } else {
-                    console.error('[DEBUG-END-BREAK] Error:', data);
                     alert('Error ending break: ' + (data.error?.message || 'Unknown error'));
                 }
             } catch (error) {
-                console.error('[DEBUG-END-BREAK] Exception:', error);
                 alert('Error ending break: ' + error.message);
             }
         }

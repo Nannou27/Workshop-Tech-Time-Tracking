@@ -12,18 +12,12 @@ router.use(authenticate);
 async function tableExists(tableName) {
   try {
     const dbType = process.env.DB_TYPE || 'postgresql';
-    let checkQuery;
-    if (dbType === 'mysql') {
-      checkQuery = `SHOW TABLES LIKE '${tableName}'`;
-    } else {
-      checkQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '${tableName}') as exists`;
-    }
+    const checkQuery = dbType === 'mysql'
+      ? `SHOW TABLES LIKE '${tableName}'`
+      : `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name = '${tableName}') as exists`;
     const result = await db.query(checkQuery);
-    const exists = dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
-    logger.info(`[TABLE-CHECK] ${tableName} exists: ${exists} (dbType: ${dbType})`);
-    return exists;
+    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
   } catch (error) {
-    logger.error(`[TABLE-CHECK] Error checking if ${tableName} exists:`, error);
     return false;
   }
 }
@@ -32,21 +26,12 @@ async function tableExists(tableName) {
 async function columnExists(tableName, columnName) {
   try {
     const dbType = process.env.DB_TYPE || 'postgresql';
-    let checkQuery;
-    if (dbType === 'mysql') {
-      checkQuery = `SHOW COLUMNS FROM ${tableName} LIKE '${columnName}'`;
-    } else {
-      checkQuery = `SELECT EXISTS (
-        SELECT 1 FROM information_schema.columns 
-        WHERE table_name = '${tableName}' AND column_name = '${columnName}'
-      ) as exists`;
-    }
+    const checkQuery = dbType === 'mysql'
+      ? `SHOW COLUMNS FROM ${tableName} LIKE '${columnName}'`
+      : `SELECT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = '${tableName}' AND column_name = '${columnName}') as exists`;
     const result = await db.query(checkQuery);
-    const exists = dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
-    logger.info(`[COLUMN-CHECK] ${tableName}.${columnName} exists: ${exists}`);
-    return exists;
+    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
   } catch (error) {
-    logger.error(`[COLUMN-CHECK] Error checking if ${tableName}.${columnName} exists:`, error);
     return false;
   }
 }
@@ -616,7 +601,7 @@ router.post('/clock-out', async (req, res, next) => {
   }
 });
 
-// GET /api/v1/shifts/me - Get current shift state (for debugging and UI)
+// GET /api/v1/shifts/me - Get current shift state
 router.get('/me', async (req, res, next) => {
   try {
     const dbType = process.env.DB_TYPE || 'postgresql';
@@ -681,13 +666,8 @@ router.get('/me', async (req, res, next) => {
 // POST /api/v1/shifts/start-break - Start break (pause shift timer)
 router.post('/start-break', async (req, res, next) => {
   try {
-    logger.info(`[BREAK-START] START-BREAK endpoint called by user ${req.user?.id}`);
-    
     const shiftsTableExists = await tableExists('technician_shifts');
-    logger.info(`[BREAK-START] technician_shifts table exists: ${shiftsTableExists}`);
-    
     if (!shiftsTableExists) {
-      logger.warn(`[BREAK-START] Shifts table does not exist, returning SCHEMA_MISMATCH`);
       return res.status(400).json({
         error: {
           code: 'SCHEMA_MISMATCH',
@@ -698,7 +678,6 @@ router.post('/start-break', async (req, res, next) => {
 
     const dbType = process.env.DB_TYPE || 'postgresql';
     const placeholder = dbType === 'mysql' ? '?' : '$1';
-    logger.info(`[BREAK-START] DB type: ${dbType}`);
     
     // Find active shift
     const activeShift = await db.query(
@@ -737,22 +716,15 @@ router.post('/start-break', async (req, res, next) => {
       });
     }
 
-    // AUTO-PAUSE active job timers to prevent break time from being counted as worked time.
-    // Breaks are non-work time; job timers must not run during breaks.
-    logger.info(`[BREAK-START] Checking for active timers for technician ${req.user.id}`);
-    
+    // Auto-pause active job timers when break starts (enforce break/timer invariant)
     const activePh = dbType === 'mysql' ? '?' : '$1';
     const activeTimeLogs = await db.query(
-      `SELECT id, assignment_id, job_card_id FROM time_logs WHERE technician_id = ${activePh} AND status = 'active'`,
+      `SELECT id FROM time_logs WHERE technician_id = ${activePh} AND status = 'active'`,
       [req.user.id]
     );
     
-    logger.info(`[BREAK-START] Found ${activeTimeLogs.rows?.length || 0} active timer(s)`);
-    
     if (activeTimeLogs.rows && activeTimeLogs.rows.length > 0) {
       const nowIso = now.toISOString();
-      let pausedCount = 0;
-      
       for (const log of activeTimeLogs.rows) {
         try {
           if (dbType === 'mysql') {
@@ -766,16 +738,11 @@ router.post('/start-break', async (req, res, next) => {
               [log.id]
             );
           }
-          pausedCount++;
-          logger.info(`[BREAK-START] Paused timer ${log.id} (assignment ${log.assignment_id})`);
         } catch (err) {
-          logger.error(`[BREAK-START] Failed to pause timer ${log.id}:`, err);
+          logger.error('Failed to auto-pause timer during break start:', err);
         }
       }
-      
-      logger.info(`[BREAK-START] Auto-paused ${pausedCount} active timer(s) for technician ${req.user.id}`);
-    } else {
-      logger.info(`[BREAK-START] No active timers to pause`);
+      logger.info(`Technician ${req.user.id} started break, auto-paused ${activeTimeLogs.rows.length} timer(s)`);
     }
 
     // Persist break start time; if schema doesn't have a break_start_time column, store in notes JSON.
@@ -894,7 +861,7 @@ router.post('/end-break', async (req, res, next) => {
       await db.query(`UPDATE technician_shifts SET notes = $1 WHERE id = $2`, [finalNotes, shift.id]);
     }
     
-    logger.info(`[END-BREAK] Technician ${req.user.id} ended break. break_start_time set to NULL, added ${addedSeconds}s`);
+    logger.info(`Technician ${req.user.id} ended break, added ${addedSeconds}s`);
 
     logger.info(`Technician ${req.user.id} ended break. Added ${addedSeconds}s`);
     res.json({
