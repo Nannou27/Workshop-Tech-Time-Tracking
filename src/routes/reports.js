@@ -2376,11 +2376,12 @@ router.get('/technician-efficiency',
               COALESCE(SUM(CASE WHEN a.status = 'completed' AND ${repeatExpr} THEN 1 ELSE 0 END), 0) as repeat_jobs
             FROM assignments a
             JOIN job_cards jc ON a.job_card_id = jc.id
+            JOIN time_logs tl_filter ON tl_filter.assignment_id = a.id AND tl_filter.status = 'finished'
             WHERE a.technician_id = ?
               AND a.status != 'cancelled'
               ${whereBU}
-              AND DATE(${jobAggDateExpr}) >= ?
-              AND DATE(${jobAggDateExpr}) <= ?
+              AND DATE(tl_filter.end_ts) >= ?
+              AND DATE(tl_filter.end_ts) <= ?
           `
           : `
             SELECT
@@ -2389,12 +2390,13 @@ router.get('/technician-efficiency',
               COALESCE(SUM(CASE WHEN a.status = 'completed' AND ${repeatExpr} THEN 1 ELSE 0 END), 0) as repeat_jobs
             FROM assignments a
             JOIN job_cards jc ON a.job_card_id = jc.id
+            JOIN time_logs tl_q ON tl_q.assignment_id = a.id AND tl_q.status = 'finished'
             ${joinCreator}
             WHERE a.technician_id = $1
               AND a.status != 'cancelled'
-              ${whereBU}
-              AND DATE(${jobAggDateExpr}) >= $2
-              AND DATE(${jobAggDateExpr}) <= $3
+              ${whereBUText}
+              AND DATE(tl_q.end_ts) >= $2
+              AND DATE(tl_q.end_ts) <= $3
           `;
         const qualityParams = dbType === 'mysql'
           ? (() => {
