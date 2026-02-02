@@ -233,8 +233,9 @@ router.get('/comprehensive', async (req, res, next) => {
       LEFT JOIN technicians t ON COALESCE(a.technician_id, tl.technician_id) = t.user_id
       LEFT JOIN users u ON t.user_id = u.id
       WHERE (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})
-        AND DATE(${completedDateField}) >= ${dbType === 'mysql' ? '?' : '$1'}
-        AND DATE(${completedDateField}) <= ${dbType === 'mysql' ? '?' : '$2'}
+        AND tl.end_ts IS NOT NULL
+        AND DATE(tl.end_ts) >= ${dbType === 'mysql' ? '?' : '$1'}
+        AND DATE(tl.end_ts) <= ${dbType === 'mysql' ? '?' : '$2'}
     `;
     
     const params = [fromParam, toParam];
