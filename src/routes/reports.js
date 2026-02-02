@@ -974,42 +974,11 @@ router.get('/technician-performance',
         queryText += ` AND u.id = ${addParam(technician_id)}`;
       }
 
-      // Multi-tenant security: scope technicians to BU.
-      // Primary path: users.business_unit_id matches.
-      // Fallback paths (legacy data): base location BU matches OR technician has any historical job card in BU.
+      // Multi-tenant security: scope technicians to BU via users.business_unit_id or job_cards.business_unit_id
       if (hasBU) {
         if (hasUserBusinessUnitId) {
-          if (hasUserLocationId && hasLocationsBU) {
-            queryText += ` AND (
-              u.business_unit_id = ${addParam(buId)}
-              OR (
-                u.business_unit_id IS NULL
-                AND l_user.business_unit_id = ${addParam(buId)}
-              )
-              ${hasJobCardsBU ? `OR EXISTS (
-                SELECT 1
-                FROM assignments a2
-                JOIN job_cards jc2 ON a2.job_card_id = jc2.id
-                WHERE a2.technician_id = u.id AND jc2.business_unit_id = ${addParam(buId)}
-                LIMIT 1
-              )` : ''}
-            )`;
-          } else {
-            queryText += ` AND (
-              u.business_unit_id = ${addParam(buId)}
-              ${hasJobCardsBU ? `OR EXISTS (
-                SELECT 1
-                FROM assignments a2
-                JOIN job_cards jc2 ON a2.job_card_id = jc2.id
-                WHERE a2.technician_id = u.id AND jc2.business_unit_id = ${addParam(buId)}
-                LIMIT 1
-              )` : ''}
-            )`;
-          }
-        } else if (hasUserLocationId && hasLocationsBU) {
-          // No users.business_unit_id column; rely on base location BU and/or job card BU.
           queryText += ` AND (
-            l_user.business_unit_id = ${addParam(buId)}
+            u.business_unit_id = ${addParam(buId)}
             ${hasJobCardsBU ? `OR EXISTS (
               SELECT 1
               FROM assignments a2
@@ -1018,15 +987,24 @@ router.get('/technician-performance',
               LIMIT 1
             )` : ''}
           )`;
+        } else if (hasJobCardsBU) {
+          // No users.business_unit_id; scope via job_cards only
+          queryText += ` AND EXISTS (
+            SELECT 1
+            FROM assignments a2
+            JOIN job_cards jc2 ON a2.job_card_id = jc2.id
+            WHERE a2.technician_id = u.id AND jc2.business_unit_id = ${addParam(buId)}
+            LIMIT 1
+          )`;
         }
       }
 
-      // If filtering to a specific location, ensure "base location" technicians appear only for that location
-      // while still allowing technicians with jobs in the selected location even if their base differs.
-      if (location_id) {
+      // Location filter (if specified, filter jobs by location)
+      // Note: location is NOT in GROUP BY, so this filters data, not splits rows
+      if (location_id && hasJobCardsBU) {
         const locId = parseInt(location_id, 10);
         if (Number.isFinite(locId)) {
-          queryText += ` AND (${effectiveLocIdExpr} IS NULL OR ${effectiveLocIdExpr} = ${addParam(locId)})`;
+          queryText += ` AND jc.location_id = ${addParam(locId)}`;
         }
       }
 
