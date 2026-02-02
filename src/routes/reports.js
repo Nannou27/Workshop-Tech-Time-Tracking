@@ -1054,7 +1054,14 @@ router.get('/technician-performance',
       });
     } catch (error) {
       logger.error('Technician performance report error:', error);
-      next(error);
+      logger.error('Error details:', { message: error.message, stack: error.stack });
+      res.status(500).json({
+        error: {
+          code: 'REPORT_ERROR',
+          message: 'Technician performance report failed: ' + error.message,
+          details: error.stack
+        }
+      });
     }
   }
 );
@@ -2965,7 +2972,14 @@ router.get('/technician-efficiency',
       });
     } catch (error) {
       logger.error('Technician efficiency report error:', error);
-      next(error);
+      logger.error('Error details:', { message: error.message, stack: error.stack });
+      res.status(500).json({
+        error: {
+          code: 'REPORT_ERROR',
+          message: 'Technician efficiency report failed: ' + error.message,
+          details: error.stack
+        }
+      });
     }
   }
 );
