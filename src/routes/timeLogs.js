@@ -348,6 +348,29 @@ router.post('/start',
           }
         }
 
+        // HARD GUARD: Immediately before INSERT, check for active break (invariant enforcement)
+        // Rule: If break is active, number of active time_logs MUST be zero.
+        const breakCheckPh = dbType === 'mysql' ? '?' : '$1';
+        const breakCheckResult = await db.query(
+          `SELECT 1 FROM technician_shifts
+           WHERE technician_id = ${breakCheckPh}
+             AND clock_out_time IS NULL
+             AND break_start_time IS NOT NULL
+           LIMIT 1`,
+          [technicianId]
+        );
+        
+        if (breakCheckResult.rows.length > 0) {
+          await redis.releaseLock(lockKey);
+          logger.warn(`[TIMER-START] BLOCKED at INSERT: Technician ${technicianId} has active break, cannot create time_log`);
+          return res.status(409).json({
+            error: {
+              code: 'ON_BREAK',
+              message: 'Cannot start job timer while on break. Please end your break first.'
+            }
+          });
+        }
+
         // Create time log
         let timeLog;
         
@@ -592,6 +615,28 @@ router.post('/:id/resume',
           }
         });
       }
+    }
+
+    // HARD GUARD: Immediately before INSERT, check for active break (last-line defense)
+    // INVARIANT: If break is active, number of active time_logs MUST be zero.
+    const breakCheckPh = dbType === 'mysql' ? '?' : '$1';
+    const breakCheckResult = await db.query(
+      `SELECT 1 FROM technician_shifts
+       WHERE technician_id = ${breakCheckPh}
+         AND clock_out_time IS NULL
+         AND break_start_time IS NOT NULL
+       LIMIT 1`,
+      [technicianId]
+    );
+    
+    if (breakCheckResult.rows.length > 0) {
+      logger.warn(`[TIMER-RESUME] BLOCKED at INSERT: Technician ${technicianId} has active break, cannot create time_log`);
+      return res.status(409).json({
+        error: {
+          code: 'ON_BREAK',
+          message: 'Cannot resume job timer while on break. Please end your break first.'
+        }
+      });
     }
 
     // Create new time log segment
