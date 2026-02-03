@@ -132,7 +132,7 @@ router.get('/jobcard-times',
 // GET /api/v1/reports/comprehensive
 router.get('/comprehensive', async (req, res, next) => {
   try {
-    const { from, to, technician_id, period = 'day' } = req.query;
+    let { from, to, technician_id, period = 'day', business_unit_id } = req.query;
 
     if (!from || !to) {
       return res.status(400).json({
@@ -144,6 +144,32 @@ router.get('/comprehensive', async (req, res, next) => {
     }
 
     const dbType = process.env.DB_TYPE || 'postgresql';
+    
+    // ENFORCE business unit filtering for non-Super Admin users (Service Advisor, BU Admin)
+    const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
+    const userResult = await db.query(
+      `SELECT u.business_unit_id, r.name as role_name 
+       FROM users u 
+       JOIN roles r ON u.role_id = r.id 
+       WHERE u.id = ${userCheckPlaceholder}`,
+      [req.user.id]
+    );
+    
+    let enforcedBusinessUnitId = null;
+    if (userResult.rows.length > 0) {
+      const userRole = userResult.rows[0].role_name;
+      const userBusinessUnitId = userResult.rows[0].business_unit_id;
+      
+      // If NOT Super Admin, FORCE filter by user's business unit
+      if (userRole && userRole.toLowerCase() !== 'super admin' && userBusinessUnitId) {
+        enforcedBusinessUnitId = userBusinessUnitId;
+        business_unit_id = userBusinessUnitId;
+        logger.info(`[SECURITY] Enforcing business unit filter for comprehensive report - ${userRole}: BU ${userBusinessUnitId}`);
+      }
+    }
+    
+    // Check if job_cards has business_unit_id column
+    const hasJobCardsBU = await columnExists('job_cards', 'business_unit_id');
     
     function normalizeDateOnly(value) {
       if (!value) return null;
@@ -213,6 +239,27 @@ router.get('/comprehensive', async (req, res, next) => {
       : `EXISTS (SELECT 1 FROM assignments ax WHERE ax.job_card_id = jc.id AND ax.status = 'completed')`;
 
     // Get completed job cards with time details (date filtered by time_logs.end_ts)
+    // Use database-specific aggregation function
+    const technicianAggExpr = dbType === 'mysql'
+      ? `GROUP_CONCAT(DISTINCT CONCAT(u.display_name, ' (', t.employee_code, ')') SEPARATOR ', ')`
+      : `STRING_AGG(DISTINCT CONCAT(u.display_name, ' (', t.employee_code, ')'), ', ')`;
+    
+    const params = [fromParam, toParam];
+    let paramCount = 2;
+    
+    // Build business unit filter if applicable
+    let buFilterCompleted = '';
+    if (enforcedBusinessUnitId && hasJobCardsBU) {
+      if (dbType === 'mysql') {
+        buFilterCompleted = ` AND jc.business_unit_id = ?`;
+        params.push(enforcedBusinessUnitId);
+      } else {
+        paramCount++;
+        buFilterCompleted = ` AND jc.business_unit_id = $${paramCount}`;
+        params.push(enforcedBusinessUnitId);
+      }
+    }
+    
     let completedQuery = `
       SELECT 
         ${dateGroupingCompleted} as period,
@@ -224,7 +271,7 @@ router.get('/comprehensive', async (req, res, next) => {
         jc.priority,
         jc.estimated_hours,
         jc.actual_hours,
-        GROUP_CONCAT(DISTINCT CONCAT(u.display_name, ' (', t.employee_code, ')') SEPARATOR ', ') as technicians,
+        ${technicianAggExpr} as technicians,
         SUM(CASE WHEN tl.status = 'finished' THEN tl.duration_seconds ELSE 0 END) / 3600.0 as total_hours,
         COUNT(DISTINCT CASE WHEN tl.status = 'finished' THEN tl.id END) as time_log_count
       FROM job_cards jc
@@ -235,11 +282,8 @@ router.get('/comprehensive', async (req, res, next) => {
       WHERE (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})
         AND tl.id IS NOT NULL
         AND DATE(tl.end_ts) >= ${dbType === 'mysql' ? '?' : '$1'}
-        AND DATE(tl.end_ts) <= ${dbType === 'mysql' ? '?' : '$2'}
+        AND DATE(tl.end_ts) <= ${dbType === 'mysql' ? '?' : '$2'}${buFilterCompleted}
     `;
-    
-    const params = [fromParam, toParam];
-    let paramCount = 2;
 
     if (technician_id) {
       if (dbType === 'mysql') {
@@ -261,6 +305,22 @@ router.get('/comprehensive', async (req, res, next) => {
     const completedResult = await db.query(completedQuery, params);
 
     // Get incomplete job cards
+    const incompleteParams = [fromParam, toParam];
+    let incompleteParamCount = 2;
+    
+    // Build business unit filter for incomplete query
+    let buFilterIncomplete = '';
+    if (enforcedBusinessUnitId && hasJobCardsBU) {
+      if (dbType === 'mysql') {
+        buFilterIncomplete = ` AND jc.business_unit_id = ?`;
+        incompleteParams.push(enforcedBusinessUnitId);
+      } else {
+        incompleteParamCount++;
+        buFilterIncomplete = ` AND jc.business_unit_id = $${incompleteParamCount}`;
+        incompleteParams.push(enforcedBusinessUnitId);
+      }
+    }
+    
     let incompleteQuery;
     if (dbType === 'mysql') {
       incompleteQuery = `
@@ -285,7 +345,7 @@ router.get('/comprehensive', async (req, res, next) => {
         WHERE COALESCE(jc.status, 'open') != 'cancelled'
           AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})
           AND ${createdDateField} >= ?
-          AND ${createdDateField} <= ?
+          AND ${createdDateField} <= ?${buFilterIncomplete}
       `;
     } else {
       incompleteQuery = `
@@ -310,12 +370,9 @@ router.get('/comprehensive', async (req, res, next) => {
         WHERE COALESCE(jc.status, 'open') != 'cancelled'
           AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})
           AND ${createdDateField} >= $1
-          AND ${createdDateField} <= $2
+          AND ${createdDateField} <= $2${buFilterIncomplete}
       `;
     }
-
-    const incompleteParams = [fromParam, toParam];
-    let incompleteParamCount = 2;
 
     if (technician_id) {
       if (dbType === 'mysql') {
@@ -340,6 +397,14 @@ router.get('/comprehensive', async (req, res, next) => {
     const techParams = [fromParam, toParam, fromParam, toParam];
     let techParamCount = 4;
     const p = (n) => (dbType === 'mysql' ? '?' : `$${n}`);
+    
+    // Build business unit filter for tech breakdown
+    let buFilterTech = '';
+    if (enforcedBusinessUnitId && hasJobCardsBU) {
+      techParams.push(enforcedBusinessUnitId);
+      techParamCount++;
+      buFilterTech = ` AND jc.business_unit_id = ${p(techParamCount)}`;
+    }
 
     // IMPORTANT: Avoid double-counting estimated hours due to time_logs join.
     // We aggregate time logs per (job_card_id, technician_id) first, then join that aggregate.
@@ -366,7 +431,7 @@ router.get('/comprehensive', async (req, res, next) => {
         FROM time_logs tl
         GROUP BY tl.job_card_id, tl.technician_id
       ) tl_agg ON tl_agg.job_card_id = jc.id AND tl_agg.technician_id = t.user_id
-      WHERE a.status != 'cancelled'
+      WHERE a.status != 'cancelled'${buFilterTech}
         AND (
           ((COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) AND ${completedDateField} >= ${p(1)} AND ${completedDateField} <= ${p(2)})
           OR
@@ -376,7 +441,7 @@ router.get('/comprehensive', async (req, res, next) => {
     
     if (technician_id) {
       techParams.push(technician_id);
-        techParamCount++;
+      techParamCount++;
       techBreakdownQuery += ` AND t.user_id = ${p(techParamCount)}`;
     }
     
