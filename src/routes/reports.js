@@ -145,9 +145,12 @@ router.get('/comprehensive', async (req, res, next) => {
 
     const dbType = process.env.DB_TYPE || 'postgresql';
     
-    // Check if required columns exist for business unit filtering
+    // Check if required tables/columns exist for schema tolerance
     const hasUsersBU = await columnExists('users', 'business_unit_id');
     const hasJobCardsBU = await columnExists('job_cards', 'business_unit_id');
+    const hasTechnicians = await tableExists('technicians');
+    const hasEstimatedHours = await columnExists('job_cards', 'estimated_hours');
+    const hasActualHours = await columnExists('job_cards', 'actual_hours');
     
     // ENFORCE business unit filtering for non-Super Admin users (Service Advisor, BU Admin)
     let enforcedBusinessUnitId = null;
@@ -261,10 +264,24 @@ router.get('/comprehensive', async (req, res, next) => {
       : `EXISTS (SELECT 1 FROM assignments ax WHERE ax.job_card_id = jc.id AND ax.status = 'completed')`;
 
     // Get completed job cards with time details (date filtered by time_logs.end_ts)
-    // Use database-specific aggregation function
-    const technicianAggExpr = dbType === 'mysql'
-      ? `GROUP_CONCAT(DISTINCT CONCAT(u.display_name, ' (', t.employee_code, ')') SEPARATOR ', ')`
-      : `STRING_AGG(DISTINCT CONCAT(u.display_name, ' (', t.employee_code, ')'), ', ')`;
+    // Use database-specific aggregation function with schema tolerance
+    const technicianAggExpr = hasTechnicians
+      ? (dbType === 'mysql'
+        ? `GROUP_CONCAT(DISTINCT CONCAT(u.display_name, ' (', COALESCE(t.employee_code, 'N/A'), ')') SEPARATOR ', ')`
+        : `STRING_AGG(DISTINCT CONCAT(u.display_name, ' (', COALESCE(t.employee_code, 'N/A'), ')'), ', ')`)
+      : (dbType === 'mysql'
+        ? `GROUP_CONCAT(DISTINCT u.display_name SEPARATOR ', ')`
+        : `STRING_AGG(DISTINCT u.display_name, ', ')`);
+    
+    // Schema-tolerant column selections
+    const estimatedHoursSelect = hasEstimatedHours ? 'jc.estimated_hours' : 'NULL as estimated_hours';
+    const actualHoursSelect = hasActualHours ? 'jc.actual_hours' : 'NULL as actual_hours';
+    const technicianJoin = hasTechnicians 
+      ? 'LEFT JOIN technicians t ON COALESCE(a.technician_id, tl.technician_id) = t.user_id'
+      : '';
+    const userJoin = hasTechnicians
+      ? 'LEFT JOIN users u ON t.user_id = u.id'
+      : 'LEFT JOIN users u ON COALESCE(a.technician_id, tl.technician_id) = u.id';
     
     const params = [fromParam, toParam];
     let paramCount = 2;
@@ -291,16 +308,16 @@ router.get('/comprehensive', async (req, res, next) => {
         jc.work_type,
         jc.status as job_card_status,
         jc.priority,
-        jc.estimated_hours,
-        jc.actual_hours,
+        ${estimatedHoursSelect},
+        ${actualHoursSelect},
         ${technicianAggExpr} as technicians,
         SUM(CASE WHEN tl.status = 'finished' THEN tl.duration_seconds ELSE 0 END) / 3600.0 as total_hours,
         COUNT(DISTINCT CASE WHEN tl.status = 'finished' THEN tl.id END) as time_log_count
       FROM job_cards jc
       LEFT JOIN assignments a ON jc.id = a.job_card_id AND a.status != 'cancelled'
       LEFT JOIN time_logs tl ON jc.id = tl.job_card_id AND tl.status = 'finished'
-      LEFT JOIN technicians t ON COALESCE(a.technician_id, tl.technician_id) = t.user_id
-      LEFT JOIN users u ON t.user_id = u.id
+      ${technicianJoin}
+      ${userJoin}
       WHERE (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})
         AND tl.id IS NOT NULL
         AND DATE(tl.end_ts) >= ${dbType === 'mysql' ? '?' : '$1'}
@@ -318,9 +335,11 @@ router.get('/comprehensive', async (req, res, next) => {
       }
     }
 
+    // Schema-tolerant GROUP BY
+    const groupByColumns = `${dateGroupingCompleted}, jc.id, jc.job_number, jc.customer_name, jc.work_type, jc.status, jc.priority${hasEstimatedHours ? ', jc.estimated_hours' : ''}${hasActualHours ? ', jc.actual_hours' : ''}`;
+    
     completedQuery += `
-      GROUP BY ${dateGroupingCompleted}, jc.id, jc.job_number, jc.customer_name, jc.work_type, 
-               jc.status, jc.priority, jc.estimated_hours, jc.actual_hours
+      GROUP BY ${groupByColumns}
       ORDER BY period DESC, jc.job_number DESC
     `;
 
@@ -343,6 +362,15 @@ router.get('/comprehensive', async (req, res, next) => {
       }
     }
     
+    // Schema-tolerant incomplete query (same pattern as completed query)
+    const incompleteAggExpr = hasTechnicians
+      ? (dbType === 'mysql'
+        ? `GROUP_CONCAT(DISTINCT CONCAT(u.display_name, ' (', COALESCE(t.employee_code, 'N/A'), ')') SEPARATOR ', ')`
+        : `STRING_AGG(DISTINCT CONCAT(u.display_name, ' (', COALESCE(t.employee_code, 'N/A'), ')'), ', ')`)
+      : (dbType === 'mysql'
+        ? `GROUP_CONCAT(DISTINCT u.display_name SEPARATOR ', ')`
+        : `STRING_AGG(DISTINCT u.display_name, ', ')`);
+    
     let incompleteQuery;
     if (dbType === 'mysql') {
       incompleteQuery = `
@@ -354,16 +382,16 @@ router.get('/comprehensive', async (req, res, next) => {
           jc.work_type,
           jc.status as job_card_status,
           jc.priority,
-          jc.estimated_hours,
-          jc.actual_hours,
-          GROUP_CONCAT(DISTINCT CONCAT(u.display_name, ' (', t.employee_code, ')') SEPARATOR ', ') as technicians,
+          ${estimatedHoursSelect},
+          ${actualHoursSelect},
+          ${incompleteAggExpr} as technicians,
           COALESCE(SUM(CASE WHEN tl.status IN ('finished','paused') THEN tl.duration_seconds ELSE 0 END), 0) / 3600.0 as total_hours,
           COUNT(DISTINCT CASE WHEN tl.status IN ('finished','paused') THEN tl.id END) as time_log_count
         FROM job_cards jc
         LEFT JOIN assignments a ON jc.id = a.job_card_id AND a.status != 'cancelled'
         LEFT JOIN time_logs tl ON jc.id = tl.job_card_id
-        LEFT JOIN technicians t ON COALESCE(a.technician_id, tl.technician_id) = t.user_id
-        LEFT JOIN users u ON t.user_id = u.id
+        ${technicianJoin}
+        ${userJoin}
         WHERE COALESCE(jc.status, 'open') != 'cancelled'
           AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})
           AND ${createdDateField} >= ?
@@ -379,16 +407,16 @@ router.get('/comprehensive', async (req, res, next) => {
           jc.work_type,
           jc.status as job_card_status,
           jc.priority,
-          jc.estimated_hours,
-          jc.actual_hours,
-          STRING_AGG(DISTINCT CONCAT(u.display_name, ' (', t.employee_code, ')'), ', ') as technicians,
+          ${estimatedHoursSelect},
+          ${actualHoursSelect},
+          ${incompleteAggExpr} as technicians,
           COALESCE(SUM(CASE WHEN tl.status IN ('finished','paused') THEN tl.duration_seconds ELSE 0 END), 0) / 3600.0 as total_hours,
           COUNT(DISTINCT CASE WHEN tl.status IN ('finished','paused') THEN tl.id END) as time_log_count
         FROM job_cards jc
         LEFT JOIN assignments a ON jc.id = a.job_card_id AND a.status != 'cancelled'
         LEFT JOIN time_logs tl ON jc.id = tl.job_card_id
-        LEFT JOIN technicians t ON COALESCE(a.technician_id, tl.technician_id) = t.user_id
-        LEFT JOIN users u ON t.user_id = u.id
+        ${technicianJoin}
+        ${userJoin}
         WHERE COALESCE(jc.status, 'open') != 'cancelled'
           AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})
           AND ${createdDateField} >= $1
@@ -407,9 +435,11 @@ router.get('/comprehensive', async (req, res, next) => {
       }
     }
 
+    // Schema-tolerant GROUP BY for incomplete query
+    const incompleteGroupByColumns = `${dateGroupingCreated}, jc.id, jc.job_number, jc.customer_name, jc.work_type, jc.status, jc.priority${hasEstimatedHours ? ', jc.estimated_hours' : ''}${hasActualHours ? ', jc.actual_hours' : ''}`;
+    
     incompleteQuery += `
-      GROUP BY ${dateGroupingCreated}, jc.id, jc.job_number, jc.customer_name, jc.work_type, 
-               jc.status, jc.priority, jc.estimated_hours, jc.actual_hours
+      GROUP BY ${incompleteGroupByColumns}
       ORDER BY period DESC, jc.job_number DESC
     `;
 
@@ -430,49 +460,59 @@ router.get('/comprehensive', async (req, res, next) => {
 
     // IMPORTANT: Avoid double-counting estimated hours due to time_logs join.
     // We aggregate time logs per (job_card_id, technician_id) first, then join that aggregate.
-    let techBreakdownQuery = `
-      SELECT 
-        t.user_id as technician_id,
-        u.display_name as technician_name,
-        t.employee_code,
-        COUNT(DISTINCT CASE WHEN (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) THEN jc.id END) as completed_count,
-        COUNT(DISTINCT CASE WHEN (COALESCE(jc.status, 'open') != 'cancelled' AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})) THEN jc.id END) as incomplete_count,
-        COALESCE(SUM(CASE WHEN (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) THEN COALESCE(tl_agg.total_seconds, 0) ELSE 0 END), 0) / 3600.0 as total_hours,
-        COALESCE(SUM(CASE WHEN (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) THEN COALESCE(jc.estimated_hours, 0) ELSE 0 END), 0) as estimated_hours_completed,
-        COALESCE(SUM(CASE WHEN (COALESCE(jc.status, 'open') != 'cancelled' AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})) THEN COALESCE(jc.estimated_hours, 0) ELSE 0 END), 0) as estimated_hours_incomplete,
-        COALESCE(SUM(CASE WHEN COALESCE(jc.status, 'open') != 'cancelled' THEN COALESCE(jc.estimated_hours, 0) ELSE 0 END), 0) as estimated_hours_total
-      FROM assignments a
-      JOIN job_cards jc ON a.job_card_id = jc.id
-      JOIN technicians t ON a.technician_id = t.user_id
-      JOIN users u ON t.user_id = u.id
-      LEFT JOIN (
-        SELECT
-          tl.job_card_id,
-          tl.technician_id,
-          SUM(CASE WHEN tl.status IN ('finished','paused') THEN tl.duration_seconds ELSE 0 END) as total_seconds
-        FROM time_logs tl
-        GROUP BY tl.job_card_id, tl.technician_id
-      ) tl_agg ON tl_agg.job_card_id = jc.id AND tl_agg.technician_id = t.user_id
-      WHERE a.status != 'cancelled'${buFilterTech}
-        AND (
-          ((COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) AND ${completedDateField} >= ${p(1)} AND ${completedDateField} <= ${p(2)})
-          OR
-          (COALESCE(jc.status, 'open') != 'cancelled' AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) AND ${createdDateField} >= ${p(3)} AND ${createdDateField} <= ${p(4)})
-        )
-    `;
+    // Schema-tolerant: only run technician breakdown if technicians table exists
+    let techBreakdownResult = { rows: [] };
     
-    if (technician_id) {
-      techParams.push(technician_id);
-      techParamCount++;
-      techBreakdownQuery += ` AND t.user_id = ${p(techParamCount)}`;
+    if (hasTechnicians) {
+      const employeeCodeSelect = 't.employee_code';
+      const estimatedHoursExpr = hasEstimatedHours ? 'jc.estimated_hours' : '0';
+      
+      let techBreakdownQuery = `
+        SELECT 
+          t.user_id as technician_id,
+          u.display_name as technician_name,
+          ${employeeCodeSelect},
+          COUNT(DISTINCT CASE WHEN (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) THEN jc.id END) as completed_count,
+          COUNT(DISTINCT CASE WHEN (COALESCE(jc.status, 'open') != 'cancelled' AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})) THEN jc.id END) as incomplete_count,
+          COALESCE(SUM(CASE WHEN (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) THEN COALESCE(tl_agg.total_seconds, 0) ELSE 0 END), 0) / 3600.0 as total_hours,
+          COALESCE(SUM(CASE WHEN (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) THEN COALESCE(${estimatedHoursExpr}, 0) ELSE 0 END), 0) as estimated_hours_completed,
+          COALESCE(SUM(CASE WHEN (COALESCE(jc.status, 'open') != 'cancelled' AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})) THEN COALESCE(${estimatedHoursExpr}, 0) ELSE 0 END), 0) as estimated_hours_incomplete,
+          COALESCE(SUM(CASE WHEN COALESCE(jc.status, 'open') != 'cancelled' THEN COALESCE(${estimatedHoursExpr}, 0) ELSE 0 END), 0) as estimated_hours_total
+        FROM assignments a
+        JOIN job_cards jc ON a.job_card_id = jc.id
+        JOIN technicians t ON a.technician_id = t.user_id
+        JOIN users u ON t.user_id = u.id
+        LEFT JOIN (
+          SELECT
+            tl.job_card_id,
+            tl.technician_id,
+            SUM(CASE WHEN tl.status IN ('finished','paused') THEN tl.duration_seconds ELSE 0 END) as total_seconds
+          FROM time_logs tl
+          GROUP BY tl.job_card_id, tl.technician_id
+        ) tl_agg ON tl_agg.job_card_id = jc.id AND tl_agg.technician_id = t.user_id
+        WHERE a.status != 'cancelled'${buFilterTech}
+          AND (
+            ((COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) AND ${completedDateField} >= ${p(1)} AND ${completedDateField} <= ${p(2)})
+            OR
+            (COALESCE(jc.status, 'open') != 'cancelled' AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) AND ${createdDateField} >= ${p(3)} AND ${createdDateField} <= ${p(4)})
+          )
+      `;
+      
+      if (technician_id) {
+        techParams.push(technician_id);
+        techParamCount++;
+        techBreakdownQuery += ` AND t.user_id = ${p(techParamCount)}`;
+      }
+      
+      techBreakdownQuery += `
+        GROUP BY t.user_id, u.display_name, t.employee_code
+        ORDER BY u.display_name
+      `;
+      
+      techBreakdownResult = await db.query(techBreakdownQuery, techParams);
+    } else {
+      logger.warn('Technicians table does not exist - skipping technician breakdown');
     }
-    
-    techBreakdownQuery += `
-      GROUP BY t.user_id, u.display_name, t.employee_code
-      ORDER BY u.display_name
-    `;
-    
-    const techBreakdownResult = await db.query(techBreakdownQuery, techParams);
 
     // Calculate summary statistics
     const completed = completedResult.rows;
