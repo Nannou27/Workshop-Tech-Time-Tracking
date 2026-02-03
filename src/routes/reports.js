@@ -136,17 +136,45 @@ router.get('/comprehensive', async (req, res, next) => {
   let lastParams = null;
   
   try {
-    // business_unit_id is OPTIONAL - do not require it
-    let { from, to, technician_id, period = 'day', business_unit_id } = req.query;
-
-    if (!from || !to) {
+    // NORMALIZE DATES: Accept both from/to and start_date/end_date
+    const fromRaw = req.query.from || req.query.start_date;
+    const toRaw = req.query.to || req.query.end_date;
+    
+    if (!fromRaw || !toRaw) {
       return res.status(400).json({
         error: {
-          code: 'VALIDATION_ERROR',
-          message: 'from and to dates are required'
+          code: 'MISSING_DATES',
+          message: 'from/to (or start_date/end_date) are required'
         }
       });
     }
+    
+    // PARSE DATES: Validate they are real dates in YYYY-MM-DD format
+    const parsedFromDate = new Date(fromRaw);
+    const parsedToDate = new Date(toRaw);
+    
+    if (isNaN(parsedFromDate.getTime()) || isNaN(parsedToDate.getTime())) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_DATES',
+          message: 'Invalid date format, expected YYYY-MM-DD'
+        }
+      });
+    }
+    
+    // Use validated dates
+    const from = fromRaw;
+    const to = toRaw;
+    
+    // NORMALIZE PERIOD: Only allow day, week, month
+    let period = req.query.period || 'day';
+    const allowedPeriods = ['day', 'week', 'month'];
+    if (!allowedPeriods.includes(period)) {
+      period = 'day'; // Force to day if invalid (do NOT return 400)
+    }
+    
+    // Extract other optional parameters
+    const { technician_id, business_unit_id } = req.query;
 
     const dbType = process.env.DB_TYPE || 'postgresql';
     
