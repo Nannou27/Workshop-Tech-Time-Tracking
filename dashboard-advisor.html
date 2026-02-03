@@ -2007,7 +2007,7 @@
                     url += `&technician_id=${technicianId}`;
                 }
 
-                const response = await apiFetch(url);
+                const response = await apiFetch(url, { method: 'GET' });
                 const data = await response.json();
 
                 if (response.ok) {
