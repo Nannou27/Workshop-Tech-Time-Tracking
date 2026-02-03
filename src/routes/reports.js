@@ -147,7 +147,6 @@ router.get('/comprehensive', async (req, res, next) => {
     const dbType = process.env.DB_TYPE || 'postgresql';
     
     // Check if required tables/columns exist for schema tolerance
-    const hasUsersBU = await columnExists('users', 'business_unit_id');
     const hasJobCardsBU = await columnExists('job_cards', 'business_unit_id');
     const hasTechnicians = await tableExists('technicians');
     const hasEstimatedHours = await columnExists('job_cards', 'estimated_hours');
@@ -155,62 +154,26 @@ router.get('/comprehensive', async (req, res, next) => {
     
     // RESOLVE business_unit_id with explicit priority:
     // 1) req.query.business_unit_id (if provided)
-    // 2) user's business_unit_id from users table (if column exists and user has one)
-    // 3) null (no BU filter - generate report without BU restriction)
+    // 2) req.user.businessUnitId (set by auth middleware)
+    // 3) null (no BU filter - proceed without restriction)
     let enforcedBusinessUnitId = null;
     
-    // Priority 1: Use query param if provided
     if (business_unit_id) {
+      // Priority 1: Use query param if provided
       enforcedBusinessUnitId = business_unit_id;
       logger.info(`[COMPREHENSIVE] Using business_unit_id from query: ${business_unit_id}`);
-    }
-    // Priority 2: Fall back to user's BU if column exists
-    else if (hasUsersBU) {
-      const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
-      const userResult = await db.query(
-        `SELECT u.business_unit_id, r.name as role_name 
-         FROM users u 
-         JOIN roles r ON u.role_id = r.id 
-         WHERE u.id = ${userCheckPlaceholder}`,
-        [req.user.id]
-      );
-      
-      if (userResult.rows.length > 0) {
-        const userRole = userResult.rows[0].role_name;
-        const userBusinessUnitId = userResult.rows[0].business_unit_id;
-        
-        // For non-Super Admin, use their assigned BU if they have one
-        if (userRole && userRole.toLowerCase() !== 'super admin' && userBusinessUnitId) {
-          enforcedBusinessUnitId = userBusinessUnitId;
-          business_unit_id = userBusinessUnitId;
-          logger.info(`[SECURITY] Enforcing business unit filter for comprehensive report - ${userRole}: BU ${userBusinessUnitId}`);
-        } else if (userRole && userRole.toLowerCase() !== 'super admin' && !userBusinessUnitId) {
-          // User has no BU assigned - proceed without BU filter (do NOT return 400)
-          logger.warn(`[COMPREHENSIVE] User ${req.user.id} (${userRole}) has no business_unit_id assigned - generating report without BU filter`);
-        }
-      }
-    }
-    // Priority 3: Column doesn't exist - proceed without BU filter
-    else {
-      const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
-      const userResult = await db.query(
-        `SELECT r.name as role_name 
-         FROM users u 
-         JOIN roles r ON u.role_id = r.id 
-         WHERE u.id = ${userCheckPlaceholder}`,
-        [req.user.id]
-      );
-      
-      if (userResult.rows.length > 0) {
-        const userRole = userResult.rows[0].role_name;
-        if (userRole && userRole.toLowerCase() !== 'super admin') {
-          logger.warn(`[SECURITY] Cannot enforce business unit filter - users.business_unit_id column missing`);
-        }
-      }
+    } else if (req.user.businessUnitId) {
+      // Priority 2: Use user's BU from auth context
+      enforcedBusinessUnitId = req.user.businessUnitId;
+      business_unit_id = req.user.businessUnitId;
+      logger.info(`[COMPREHENSIVE] Using business_unit_id from user profile: ${req.user.businessUnitId}`);
+    } else {
+      // Priority 3: No BU available - proceed without BU filter (do NOT throw 400)
+      logger.info(`[COMPREHENSIVE] No business_unit_id available - generating report without BU filter`);
     }
     
-    // At this point: enforcedBusinessUnitId is either a valid BU ID or null
-    // If null, report will be generated WITHOUT business unit filtering (this is intentional)
+    // enforcedBusinessUnitId is either a valid BU ID or null
+    // If null, report will be generated WITHOUT business unit filtering
     
     function normalizeDateOnly(value) {
       if (!value) return null;
