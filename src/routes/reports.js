@@ -145,31 +145,53 @@ router.get('/comprehensive', async (req, res, next) => {
 
     const dbType = process.env.DB_TYPE || 'postgresql';
     
-    // ENFORCE business unit filtering for non-Super Admin users (Service Advisor, BU Admin)
-    const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
-    const userResult = await db.query(
-      `SELECT u.business_unit_id, r.name as role_name 
-       FROM users u 
-       JOIN roles r ON u.role_id = r.id 
-       WHERE u.id = ${userCheckPlaceholder}`,
-      [req.user.id]
-    );
+    // Check if required columns exist for business unit filtering
+    const hasUsersBU = await columnExists('users', 'business_unit_id');
+    const hasJobCardsBU = await columnExists('job_cards', 'business_unit_id');
     
+    // ENFORCE business unit filtering for non-Super Admin users (Service Advisor, BU Admin)
     let enforcedBusinessUnitId = null;
-    if (userResult.rows.length > 0) {
-      const userRole = userResult.rows[0].role_name;
-      const userBusinessUnitId = userResult.rows[0].business_unit_id;
+    
+    if (hasUsersBU) {
+      const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
+      const userResult = await db.query(
+        `SELECT u.business_unit_id, r.name as role_name 
+         FROM users u 
+         JOIN roles r ON u.role_id = r.id 
+         WHERE u.id = ${userCheckPlaceholder}`,
+        [req.user.id]
+      );
       
-      // If NOT Super Admin, FORCE filter by user's business unit
-      if (userRole && userRole.toLowerCase() !== 'super admin' && userBusinessUnitId) {
-        enforcedBusinessUnitId = userBusinessUnitId;
-        business_unit_id = userBusinessUnitId;
-        logger.info(`[SECURITY] Enforcing business unit filter for comprehensive report - ${userRole}: BU ${userBusinessUnitId}`);
+      if (userResult.rows.length > 0) {
+        const userRole = userResult.rows[0].role_name;
+        const userBusinessUnitId = userResult.rows[0].business_unit_id;
+        
+        // If NOT Super Admin, FORCE filter by user's business unit
+        if (userRole && userRole.toLowerCase() !== 'super admin' && userBusinessUnitId) {
+          enforcedBusinessUnitId = userBusinessUnitId;
+          business_unit_id = userBusinessUnitId;
+          logger.info(`[SECURITY] Enforcing business unit filter for comprehensive report - ${userRole}: BU ${userBusinessUnitId}`);
+        }
+      }
+    } else {
+      // If users.business_unit_id doesn't exist, just get the role to check if Super Admin
+      const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
+      const userResult = await db.query(
+        `SELECT r.name as role_name 
+         FROM users u 
+         JOIN roles r ON u.role_id = r.id 
+         WHERE u.id = ${userCheckPlaceholder}`,
+        [req.user.id]
+      );
+      
+      // Log that BU filtering is not available
+      if (userResult.rows.length > 0) {
+        const userRole = userResult.rows[0].role_name;
+        if (userRole && userRole.toLowerCase() !== 'super admin') {
+          logger.warn(`[SECURITY] Cannot enforce business unit filter - users.business_unit_id column missing`);
+        }
       }
     }
-    
-    // Check if job_cards has business_unit_id column
-    const hasJobCardsBU = await columnExists('job_cards', 'business_unit_id');
     
     function normalizeDateOnly(value) {
       if (!value) return null;
