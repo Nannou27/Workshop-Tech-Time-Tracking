@@ -193,7 +193,11 @@ router.get('/comprehensive', async (req, res, next) => {
     const userQuery = hasUsersBU
       ? `SELECT u.business_unit_id, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ${userCheckPlaceholder}`
       : `SELECT r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ${userCheckPlaceholder}`;
-    const userResult = await db.query(userQuery, [req.user.id]);
+    const userQueryParams = [req.user.id];
+    if (userQuery.includes('?') && userQueryParams.length === 0) {
+      throw new Error('SQL placeholder without params');
+    }
+    const userResult = await db.query(userQuery, userQueryParams);
     
     const user = userResult.rows[0] || {};
     const userRole = user.role_name || '';
@@ -369,6 +373,9 @@ router.get('/comprehensive', async (req, res, next) => {
     `;
 
     lastQuery = completedQuery; lastParams = params;
+    if (completedQuery.includes('?') && params.length === 0) {
+      throw new Error('SQL placeholder without params');
+    }
     const completedResult = await db.query(completedQuery, params);
 
     // Get incomplete job cards
@@ -470,6 +477,9 @@ router.get('/comprehensive', async (req, res, next) => {
     `;
 
     lastQuery = incompleteQuery; lastParams = incompleteParams;
+    if (incompleteQuery.includes('?') && incompleteParams.length === 0) {
+      throw new Error('SQL placeholder without params');
+    }
     const incompleteResult = await db.query(incompleteQuery, incompleteParams);
 
     // Technician breakdown: completed by completion date; incomplete by created date
@@ -537,6 +547,9 @@ router.get('/comprehensive', async (req, res, next) => {
       `;
       
       lastQuery = techBreakdownQuery; lastParams = techParams;
+      if (techBreakdownQuery.includes('?') && techParams.length === 0) {
+        throw new Error('SQL placeholder without params');
+      }
       techBreakdownResult = await db.query(techBreakdownQuery, techParams);
     } else {
       logger.warn('Technicians table does not exist - skipping technician breakdown');
@@ -639,14 +652,14 @@ router.get('/comprehensive', async (req, res, next) => {
       completed_job_cards: completed.map(sanitizeJobCard),
       incomplete_job_cards: incomplete.map(sanitizeJobCard)
     });
-  } catch (error) {
-    // Detailed error logging for debugging
-    console.error('[REPORT ERROR]', error.message);
-    console.error(error.stack);
-    console.error('[SQL]', lastQuery);
-    console.error('[PARAMS]', lastParams);
-    logger.error('Comprehensive report error:', error);
-    next(error);
+  } catch (err) {
+    console.error('[COMPREHENSIVE REPORT CRASH]', err);
+    return res.status(500).json({
+      error: {
+        code: 'REPORT_INTERNAL_ERROR',
+        message: 'Failed to generate report'
+      }
+    });
   }
 });
 
