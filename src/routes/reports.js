@@ -132,6 +132,7 @@ router.get('/jobcard-times',
 // GET /api/v1/reports/comprehensive
 router.get('/comprehensive', async (req, res, next) => {
   try {
+    // business_unit_id is OPTIONAL - do not require it
     let { from, to, technician_id, period = 'day', business_unit_id } = req.query;
 
     if (!from || !to) {
@@ -152,10 +153,19 @@ router.get('/comprehensive', async (req, res, next) => {
     const hasEstimatedHours = await columnExists('job_cards', 'estimated_hours');
     const hasActualHours = await columnExists('job_cards', 'actual_hours');
     
-    // ENFORCE business unit filtering for non-Super Admin users (Service Advisor, BU Admin)
+    // RESOLVE business_unit_id with explicit priority:
+    // 1) req.query.business_unit_id (if provided)
+    // 2) user's business_unit_id from users table (if column exists and user has one)
+    // 3) null (no BU filter - generate report without BU restriction)
     let enforcedBusinessUnitId = null;
     
-    if (hasUsersBU) {
+    // Priority 1: Use query param if provided
+    if (business_unit_id) {
+      enforcedBusinessUnitId = business_unit_id;
+      logger.info(`[COMPREHENSIVE] Using business_unit_id from query: ${business_unit_id}`);
+    }
+    // Priority 2: Fall back to user's BU if column exists
+    else if (hasUsersBU) {
       const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
       const userResult = await db.query(
         `SELECT u.business_unit_id, r.name as role_name 
@@ -169,15 +179,19 @@ router.get('/comprehensive', async (req, res, next) => {
         const userRole = userResult.rows[0].role_name;
         const userBusinessUnitId = userResult.rows[0].business_unit_id;
         
-        // If NOT Super Admin, FORCE filter by user's business unit
+        // For non-Super Admin, use their assigned BU if they have one
         if (userRole && userRole.toLowerCase() !== 'super admin' && userBusinessUnitId) {
           enforcedBusinessUnitId = userBusinessUnitId;
           business_unit_id = userBusinessUnitId;
           logger.info(`[SECURITY] Enforcing business unit filter for comprehensive report - ${userRole}: BU ${userBusinessUnitId}`);
+        } else if (userRole && userRole.toLowerCase() !== 'super admin' && !userBusinessUnitId) {
+          // User has no BU assigned - proceed without BU filter (do NOT return 400)
+          logger.warn(`[COMPREHENSIVE] User ${req.user.id} (${userRole}) has no business_unit_id assigned - generating report without BU filter`);
         }
       }
-    } else {
-      // If users.business_unit_id doesn't exist, just get the role to check if Super Admin
+    }
+    // Priority 3: Column doesn't exist - proceed without BU filter
+    else {
       const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
       const userResult = await db.query(
         `SELECT r.name as role_name 
@@ -187,7 +201,6 @@ router.get('/comprehensive', async (req, res, next) => {
         [req.user.id]
       );
       
-      // Log that BU filtering is not available
       if (userResult.rows.length > 0) {
         const userRole = userResult.rows[0].role_name;
         if (userRole && userRole.toLowerCase() !== 'super admin') {
@@ -195,6 +208,9 @@ router.get('/comprehensive', async (req, res, next) => {
         }
       }
     }
+    
+    // At this point: enforcedBusinessUnitId is either a valid BU ID or null
+    // If null, report will be generated WITHOUT business unit filtering (this is intentional)
     
     function normalizeDateOnly(value) {
       if (!value) return null;
