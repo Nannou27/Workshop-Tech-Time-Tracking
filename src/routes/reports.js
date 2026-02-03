@@ -212,6 +212,9 @@ router.get('/comprehensive', async (req, res, next) => {
     }
     // Super Admin OR missing column: enforcedBusinessUnitId stays null (no filtering)
     
+    // Boolean guard: only apply BU filter if enforcedBusinessUnitId is valid and column exists
+    const applyBUFilter = enforcedBusinessUnitId !== null && enforcedBusinessUnitId !== undefined && hasJobCardsBU;
+    
     // Update business_unit_id variable for any downstream usage
     if (enforcedBusinessUnitId) {
       business_unit_id = enforcedBusinessUnitId;
@@ -310,7 +313,7 @@ router.get('/comprehensive', async (req, res, next) => {
     
     // Build business unit filter if applicable
     let buFilterCompleted = '';
-    if (enforcedBusinessUnitId && hasJobCardsBU) {
+    if (applyBUFilter) {
       if (dbType === 'mysql') {
         buFilterCompleted = ` AND jc.business_unit_id = ?`;
         params.push(enforcedBusinessUnitId);
@@ -374,7 +377,7 @@ router.get('/comprehensive', async (req, res, next) => {
     
     // Build business unit filter for incomplete query
     let buFilterIncomplete = '';
-    if (enforcedBusinessUnitId && hasJobCardsBU) {
+    if (applyBUFilter) {
       if (dbType === 'mysql') {
         buFilterIncomplete = ` AND jc.business_unit_id = ?`;
         incompleteParams.push(enforcedBusinessUnitId);
@@ -476,7 +479,7 @@ router.get('/comprehensive', async (req, res, next) => {
     
     // Build business unit filter for tech breakdown
     let buFilterTech = '';
-    if (enforcedBusinessUnitId && hasJobCardsBU) {
+    if (applyBUFilter) {
       techParams.push(enforcedBusinessUnitId);
       techParamCount++;
       buFilterTech = ` AND jc.business_unit_id = ${p(techParamCount)}`;
