@@ -183,6 +183,7 @@ router.get('/comprehensive', async (req, res, next) => {
     const hasTechnicians = await tableExists('technicians');
     const hasEstimatedHours = await columnExists('job_cards', 'estimated_hours');
     const hasActualHours = await columnExists('job_cards', 'actual_hours');
+    const hasTimeLogsEndTs = await columnExists('time_logs', 'end_ts');
     
     // RESOLVE business_unit_id: same logic for Advisor and BU Admin
     // Check if users.business_unit_id column exists (schema tolerance)
@@ -267,7 +268,8 @@ router.get('/comprehensive', async (req, res, next) => {
     const toDate = new Date(`${toDay}T23:59:59.999Z`);
     
     // Date source: use time_logs.end_ts for completed work (single source of truth)
-    const completedDateField = 'tl.end_ts';
+    // Fallback to updated_at if end_ts column doesn't exist
+    const completedDateField = hasTimeLogsEndTs ? 'tl.end_ts' : 'tl.updated_at';
     const createdDateField = 'jc.created_at'; // For incomplete jobs only
 
     // Build date grouping based on period
@@ -355,8 +357,8 @@ router.get('/comprehensive', async (req, res, next) => {
       ${userJoin}
       WHERE (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr})
         AND tl.id IS NOT NULL
-        AND DATE(tl.end_ts) >= ${dbType === 'mysql' ? '?' : '$1'}
-        AND DATE(tl.end_ts) <= ${dbType === 'mysql' ? '?' : '$2'}${buFilterCompleted}
+        AND DATE(${completedDateField}) >= ${dbType === 'mysql' ? '?' : '$1'}
+        AND DATE(${completedDateField}) <= ${dbType === 'mysql' ? '?' : '$2'}${buFilterCompleted}
     `;
 
     if (technician_id) {
@@ -547,7 +549,7 @@ router.get('/comprehensive', async (req, res, next) => {
         ) tl_agg ON tl_agg.job_card_id = jc.id AND tl_agg.technician_id = t.user_id
         WHERE a.status != 'cancelled'${buFilterTech}
           AND (
-            ((COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) AND ${completedDateField} >= ${p(1)} AND ${completedDateField} <= ${p(2)})
+            ((COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) AND ${createdDateField} >= ${p(1)} AND ${createdDateField} <= ${p(2)})
             OR
             (COALESCE(jc.status, 'open') != 'cancelled' AND NOT (COALESCE(jc.status, '') = 'completed' OR ${completedByAssignmentExpr}) AND ${createdDateField} >= ${p(3)} AND ${createdDateField} <= ${p(4)})
           )
