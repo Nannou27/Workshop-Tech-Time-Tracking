@@ -9,6 +9,26 @@ const router = express.Router();
 // All routes require authentication
 router.use(authenticate);
 
+// Helper function to check if column exists in table
+async function columnExists(tableName, columnName) {
+  try {
+    const dbType = process.env.DB_TYPE || 'postgresql';
+    let checkQuery;
+    if (dbType === 'mysql') {
+      checkQuery = `SHOW COLUMNS FROM ${tableName} LIKE '${columnName}'`;
+    } else {
+      checkQuery = `SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = '${tableName}' AND column_name = '${columnName}'
+      ) as exists`;
+    }
+    const result = await db.query(checkQuery);
+    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+  } catch (error) {
+    return false;
+  }
+}
+
 // GET /api/v1/locations
 router.get('/', async (req, res, next) => {
   try {
@@ -18,34 +38,56 @@ router.get('/', async (req, res, next) => {
     
     logger.info(`[LOCATIONS] GET request from user: ${req.user.id}, query BU: ${business_unit_id}`);
     
+    // Check if users.business_unit_id column exists (schema tolerance)
+    const hasUsersBU = await columnExists('users', 'business_unit_id');
+    
     // ENFORCE business unit filtering for non-Super Admin users
     // Get user's role and business unit
     const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
-    const userResult = await db.query(
-      `SELECT u.business_unit_id, r.name as role_name 
-       FROM users u 
-       JOIN roles r ON u.role_id = r.id 
-       WHERE u.id = ${userCheckPlaceholder}`,
-      [req.user.id]
-    );
     
-    logger.info(`[LOCATIONS] User check result:`, userResult.rows[0]);
-    
-    if (userResult.rows.length > 0) {
-      const userRole = userResult.rows[0].role_name;
-      const userBusinessUnitId = userResult.rows[0].business_unit_id;
+    if (hasUsersBU) {
+      const userResult = await db.query(
+        `SELECT u.business_unit_id, r.name as role_name 
+         FROM users u 
+         JOIN roles r ON u.role_id = r.id 
+         WHERE u.id = ${userCheckPlaceholder}`,
+        [req.user.id]
+      );
       
-      logger.info(`[LOCATIONS] User role: ${userRole}, BU: ${userBusinessUnitId}`);
+      logger.info(`[LOCATIONS] User check result:`, userResult.rows[0]);
       
-      // If NOT Super Admin, FORCE filter by user's business unit
-      // Check role name case-insensitively
-      if (userRole && userRole.toLowerCase() !== 'super admin' && userBusinessUnitId) {
-        business_unit_id = userBusinessUnitId;
-        logger.info(`[SECURITY] ✓ Enforcing business unit filter for ${userRole}: BU ${userBusinessUnitId}`);
-      } else if (userRole && userRole.toLowerCase() === 'super admin') {
-        logger.info(`[SECURITY] Super Admin access - no business unit filter applied`);
-      } else {
-        logger.warn(`[SECURITY] ⚠️  User has no business unit assigned: User ID ${req.user.id}, Role: ${userRole}`);
+      if (userResult.rows.length > 0) {
+        const userRole = userResult.rows[0].role_name;
+        const userBusinessUnitId = userResult.rows[0].business_unit_id;
+        
+        logger.info(`[LOCATIONS] User role: ${userRole}, BU: ${userBusinessUnitId}`);
+        
+        // If NOT Super Admin, FORCE filter by user's business unit
+        // Check role name case-insensitively
+        if (userRole && userRole.toLowerCase() !== 'super admin' && userBusinessUnitId) {
+          business_unit_id = userBusinessUnitId;
+          logger.info(`[SECURITY] ✓ Enforcing business unit filter for ${userRole}: BU ${userBusinessUnitId}`);
+        } else if (userRole && userRole.toLowerCase() === 'super admin') {
+          logger.info(`[SECURITY] Super Admin access - no business unit filter applied`);
+        } else {
+          logger.warn(`[SECURITY] ⚠️  User has no business unit assigned: User ID ${req.user.id}, Role: ${userRole}`);
+        }
+      }
+    } else {
+      // Just get the role without business_unit_id
+      const userResult = await db.query(
+        `SELECT r.name as role_name 
+         FROM users u 
+         JOIN roles r ON u.role_id = r.id 
+         WHERE u.id = ${userCheckPlaceholder}`,
+        [req.user.id]
+      );
+      
+      if (userResult.rows.length > 0) {
+        const userRole = userResult.rows[0].role_name;
+        if (userRole && userRole.toLowerCase() !== 'super admin') {
+          logger.warn(`[SECURITY] Cannot enforce business unit filter for ${userRole} - users.business_unit_id column missing`);
+        }
       }
     }
     

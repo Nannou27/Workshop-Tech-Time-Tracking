@@ -9,6 +9,26 @@ const router = express.Router();
 // All routes require authentication
 router.use(authenticate);
 
+// Helper function to check if column exists in table
+async function columnExists(tableName, columnName) {
+  try {
+    const dbType = process.env.DB_TYPE || 'postgresql';
+    let checkQuery;
+    if (dbType === 'mysql') {
+      checkQuery = `SHOW COLUMNS FROM ${tableName} LIKE '${columnName}'`;
+    } else {
+      checkQuery = `SELECT EXISTS (
+        SELECT 1 FROM information_schema.columns 
+        WHERE table_name = '${tableName}' AND column_name = '${columnName}'
+      ) as exists`;
+    }
+    const result = await db.query(checkQuery);
+    return dbType === 'mysql' ? result.rows.length > 0 : result.rows[0].exists;
+  } catch (error) {
+    return false;
+  }
+}
+
 // Ensure new/extended work order fields are present in the reference table so BU Admin can configure them.
 async function ensureWorkOrderReferenceFields() {
   try {
@@ -317,6 +337,15 @@ router.get('/my-bu', async (req, res, next) => {
     await ensureWorkOrderReferenceFields();
     const userId = req.user.id;
     const dbType = process.env.DB_TYPE || 'postgresql';
+
+    // Check if users.business_unit_id column exists (schema tolerance)
+    const hasUsersBU = await columnExists('users', 'business_unit_id');
+    
+    if (!hasUsersBU) {
+      // Column doesn't exist - return empty settings gracefully
+      logger.warn(`[FIELD-VISIBILITY] users.business_unit_id column missing - returning empty settings`);
+      return res.json({ data: [] });
+    }
 
     // Get user's business unit
     const userResult = await db.query(
