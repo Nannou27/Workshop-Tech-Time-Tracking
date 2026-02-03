@@ -174,7 +174,7 @@ router.get('/comprehensive', async (req, res, next) => {
     }
     
     // Extract other optional parameters
-    const { technician_id, business_unit_id } = req.query;
+    let { technician_id, business_unit_id } = req.query;
 
     const dbType = process.env.DB_TYPE || 'postgresql';
     
