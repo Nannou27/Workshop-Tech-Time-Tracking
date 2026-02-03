@@ -131,6 +131,10 @@ router.get('/jobcard-times',
 
 // GET /api/v1/reports/comprehensive
 router.get('/comprehensive', async (req, res, next) => {
+  // Declare query variables at outer scope for error logging
+  let lastQuery = null;
+  let lastParams = null;
+  
   try {
     // business_unit_id is OPTIONAL - do not require it
     let { from, to, technician_id, period = 'day', business_unit_id } = req.query;
@@ -312,6 +316,7 @@ router.get('/comprehensive', async (req, res, next) => {
       ORDER BY period DESC, jc.job_number DESC
     `;
 
+    lastQuery = completedQuery; lastParams = params;
     const completedResult = await db.query(completedQuery, params);
 
     // Get incomplete job cards
@@ -412,6 +417,7 @@ router.get('/comprehensive', async (req, res, next) => {
       ORDER BY period DESC, jc.job_number DESC
     `;
 
+    lastQuery = incompleteQuery; lastParams = incompleteParams;
     const incompleteResult = await db.query(incompleteQuery, incompleteParams);
 
     // Technician breakdown: completed by completion date; incomplete by created date
@@ -478,6 +484,7 @@ router.get('/comprehensive', async (req, res, next) => {
         ORDER BY u.display_name
       `;
       
+      lastQuery = techBreakdownQuery; lastParams = techParams;
       techBreakdownResult = await db.query(techBreakdownQuery, techParams);
     } else {
       logger.warn('Technicians table does not exist - skipping technician breakdown');
@@ -581,6 +588,11 @@ router.get('/comprehensive', async (req, res, next) => {
       incomplete_job_cards: incomplete.map(sanitizeJobCard)
     });
   } catch (error) {
+    // Detailed error logging for debugging
+    console.error('[REPORT ERROR]', error.message);
+    console.error(error.stack);
+    console.error('[SQL]', lastQuery);
+    console.error('[PARAMS]', lastParams);
     logger.error('Comprehensive report error:', error);
     next(error);
   }
