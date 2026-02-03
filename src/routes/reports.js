@@ -157,48 +157,38 @@ router.get('/comprehensive', async (req, res, next) => {
     const hasActualHours = await columnExists('job_cards', 'actual_hours');
     
     // RESOLVE business_unit_id: same logic for Advisor and BU Admin
-    let resolvedBusinessUnitId = null;
-    let userRole = null;
+    // Check if users.business_unit_id column exists (schema tolerance)
+    const hasUsersBU = await columnExists('users', 'business_unit_id');
+    
+    // Fetch user's role (and business_unit_id if column exists)
+    const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
+    const userQuery = hasUsersBU
+      ? `SELECT u.business_unit_id, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ${userCheckPlaceholder}`
+      : `SELECT r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ${userCheckPlaceholder}`;
+    const userResult = await db.query(userQuery, [req.user.id]);
+    
+    const user = userResult.rows[0] || {};
+    const userRole = user.role_name || '';
+    const userBusinessUnitId = hasUsersBU ? user.business_unit_id : null;
+    
+    // Resolution order (same for Advisor and BU Admin):
+    // 1. Query param if provided
+    // 2. User's business_unit_id (for non-Super Admin)
+    // 3. null (no filtering - for Super Admin or when column missing)
+    let enforcedBusinessUnitId = null;
     
     if (req.query.business_unit_id) {
-      // Priority 1: Use query param if provided
-      resolvedBusinessUnitId = req.query.business_unit_id;
-    } else {
-      // Priority 2: Fetch from authenticated user's record
-      const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
-      const userResult = await db.query(
-        `SELECT u.business_unit_id, r.name as role_name 
-         FROM users u 
-         JOIN roles r ON u.role_id = r.id 
-         WHERE u.id = ${userCheckPlaceholder}`,
-        [req.user.id]
-      );
-      
-      if (userResult.rows.length > 0) {
-        userRole = userResult.rows[0].role_name;
-        resolvedBusinessUnitId = userResult.rows[0].business_unit_id;
-      }
+      enforcedBusinessUnitId = req.query.business_unit_id;
+    } else if (userRole.toLowerCase() !== 'super admin' && userBusinessUnitId) {
+      enforcedBusinessUnitId = userBusinessUnitId;
     }
+    // Super Admin OR missing column: enforcedBusinessUnitId stays null (no filtering)
     
-    // Apply role-based rules
-    if (userRole && userRole.toLowerCase() === 'super admin') {
-      // Super Admin: no BU filtering
-      resolvedBusinessUnitId = null;
-    } else if (!resolvedBusinessUnitId) {
-      // Non-Super Admin without BU: return clear error
-      return res.status(400).json({
-        error: {
-          code: 'MISSING_BUSINESS_UNIT',
-          message: 'User must be assigned to a Business Unit to generate reports'
-        }
-      });
+    // Update business_unit_id variable for any downstream usage
+    if (enforcedBusinessUnitId) {
+      business_unit_id = enforcedBusinessUnitId;
     }
-    
-    // Use resolvedBusinessUnitId for all queries
-    const enforcedBusinessUnitId = resolvedBusinessUnitId;
-    if (resolvedBusinessUnitId) {
-      business_unit_id = resolvedBusinessUnitId;
-    }
+    // technician_id, location_id are OPTIONAL - do not validate their presence
     
     function normalizeDateOnly(value) {
       if (!value) return null;
