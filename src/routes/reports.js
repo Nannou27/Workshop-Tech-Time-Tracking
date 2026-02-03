@@ -156,18 +156,49 @@ router.get('/comprehensive', async (req, res, next) => {
     const hasEstimatedHours = await columnExists('job_cards', 'estimated_hours');
     const hasActualHours = await columnExists('job_cards', 'actual_hours');
     
-    // RESOLVE business_unit_id: OPTIONAL - no 400 if missing
-    // Priority: query param > user profile > null (no filter)
-    const resolvedBU = 
-      req.query.business_unit_id ?? 
-      req.user?.businessUnitId ?? 
-      null;
+    // RESOLVE business_unit_id: same logic for Advisor and BU Admin
+    let resolvedBusinessUnitId = null;
+    let userRole = null;
     
-    let enforcedBusinessUnitId = resolvedBU;
-    if (resolvedBU) {
-      business_unit_id = resolvedBU;
+    if (req.query.business_unit_id) {
+      // Priority 1: Use query param if provided
+      resolvedBusinessUnitId = req.query.business_unit_id;
+    } else {
+      // Priority 2: Fetch from authenticated user's record
+      const userCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
+      const userResult = await db.query(
+        `SELECT u.business_unit_id, r.name as role_name 
+         FROM users u 
+         JOIN roles r ON u.role_id = r.id 
+         WHERE u.id = ${userCheckPlaceholder}`,
+        [req.user.id]
+      );
+      
+      if (userResult.rows.length > 0) {
+        userRole = userResult.rows[0].role_name;
+        resolvedBusinessUnitId = userResult.rows[0].business_unit_id;
+      }
     }
-    // If resolvedBU is null: proceed without BU filter (no error, no 400)
+    
+    // Apply role-based rules
+    if (userRole && userRole.toLowerCase() === 'super admin') {
+      // Super Admin: no BU filtering
+      resolvedBusinessUnitId = null;
+    } else if (!resolvedBusinessUnitId) {
+      // Non-Super Admin without BU: return clear error
+      return res.status(400).json({
+        error: {
+          code: 'MISSING_BUSINESS_UNIT',
+          message: 'User must be assigned to a Business Unit to generate reports'
+        }
+      });
+    }
+    
+    // Use resolvedBusinessUnitId for all queries
+    const enforcedBusinessUnitId = resolvedBusinessUnitId;
+    if (resolvedBusinessUnitId) {
+      business_unit_id = resolvedBusinessUnitId;
+    }
     
     function normalizeDateOnly(value) {
       if (!value) return null;
