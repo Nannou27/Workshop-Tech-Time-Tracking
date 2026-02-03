@@ -35,12 +35,39 @@ const errorHandler = (err, req, res, next) => {
   if (typeof err.code === 'string' && err.code.startsWith('ER_')) {
     // Missing table / column (schema drift)
     if (err.code === 'ER_NO_SUCH_TABLE' || err.code === 'ER_BAD_FIELD_ERROR') {
+      // Extract table/column from sqlMessage if possible
+      let extractedTable = null;
+      let extractedColumn = null;
+      const sqlMsg = err.sqlMessage || err.message || '';
+      
+      // ER_NO_SUCH_TABLE: Table 'dbname.tablename' doesn't exist
+      const tableMatch = sqlMsg.match(/Table '(?:[^']+\.)?([^']+)' doesn't exist/i);
+      if (tableMatch) extractedTable = tableMatch[1];
+      
+      // ER_BAD_FIELD_ERROR: Unknown column 'columnname' in 'field list'
+      const colMatch = sqlMsg.match(/Unknown column '([^']+)'/i);
+      if (colMatch) extractedColumn = colMatch[1];
+      
+      // Log full details for debugging
+      logger.error('[SCHEMA_ERROR_DEBUG]', {
+        sqlCode: err.code,
+        sqlMessage: sqlMsg,
+        table: extractedTable,
+        column: extractedColumn,
+        endpoint: req.originalUrl,
+        method: req.method,
+        query: err.sql || null
+      });
+      
+      // Return full debug info (non-prod diagnostic mode)
       return res.status(400).json({
-        error: {
-          code: 'SCHEMA_MISMATCH',
-          message: 'Database schema is missing required table/column for this operation',
-          details: err.sqlMessage || err.message
-        }
+        error: 'schema_error',
+        sqlCode: err.code,
+        sqlMessage: sqlMsg,
+        table: extractedTable,
+        column: extractedColumn,
+        endpoint: req.originalUrl,
+        query: err.sql || null
       });
     }
 
