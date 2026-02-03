@@ -152,28 +152,18 @@ router.get('/comprehensive', async (req, res, next) => {
     const hasEstimatedHours = await columnExists('job_cards', 'estimated_hours');
     const hasActualHours = await columnExists('job_cards', 'actual_hours');
     
-    // RESOLVE business_unit_id with explicit priority:
-    // 1) req.query.business_unit_id (if provided)
-    // 2) req.user.businessUnitId (set by auth middleware)
-    // 3) null (no BU filter - proceed without restriction)
-    let enforcedBusinessUnitId = null;
+    // RESOLVE business_unit_id: OPTIONAL - no 400 if missing
+    // Priority: query param > user profile > null (no filter)
+    const resolvedBU = 
+      req.query.business_unit_id ?? 
+      req.user?.businessUnitId ?? 
+      null;
     
-    if (business_unit_id) {
-      // Priority 1: Use query param if provided
-      enforcedBusinessUnitId = business_unit_id;
-      logger.info(`[COMPREHENSIVE] Using business_unit_id from query: ${business_unit_id}`);
-    } else if (req.user.businessUnitId) {
-      // Priority 2: Use user's BU from auth context
-      enforcedBusinessUnitId = req.user.businessUnitId;
-      business_unit_id = req.user.businessUnitId;
-      logger.info(`[COMPREHENSIVE] Using business_unit_id from user profile: ${req.user.businessUnitId}`);
-    } else {
-      // Priority 3: No BU available - proceed without BU filter (do NOT throw 400)
-      logger.info(`[COMPREHENSIVE] No business_unit_id available - generating report without BU filter`);
+    let enforcedBusinessUnitId = resolvedBU;
+    if (resolvedBU) {
+      business_unit_id = resolvedBU;
     }
-    
-    // enforcedBusinessUnitId is either a valid BU ID or null
-    // If null, report will be generated WITHOUT business unit filtering
+    // If resolvedBU is null: proceed without BU filter (no error, no 400)
     
     function normalizeDateOnly(value) {
       if (!value) return null;
