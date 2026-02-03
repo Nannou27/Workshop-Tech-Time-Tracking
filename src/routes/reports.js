@@ -676,12 +676,12 @@ router.get('/comprehensive', async (req, res, next) => {
       incomplete_job_cards: incomplete.map(sanitizeJobCard)
     });
   } catch (err) {
-    console.error('[COMPREHENSIVE REPORT CRASH]', err);
+    console.error('[COMPREHENSIVE REPORT ERROR]', err);
+
     return res.status(500).json({
       error: {
         code: 'REPORT_INTERNAL_ERROR',
         message: 'Failed to generate report',
-        traceId,
         detail: err.message
       }
     });
