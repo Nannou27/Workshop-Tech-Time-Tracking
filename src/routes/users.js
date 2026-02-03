@@ -57,35 +57,55 @@ router.get('/', requireAdmin, async (req, res, next) => {
 
     const dbType = process.env.DB_TYPE || 'postgresql';
     
-    // SECURITY: BU Admins can ONLY see users in their own Business Unit
-    const actorResult = await db.query(
-      dbType === 'mysql'
-        ? `SELECT u.business_unit_id, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?`
-        : `SELECT u.business_unit_id, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = $1`,
-      [req.user.id]
-    );
+    // Check if schema columns exist (schema tolerance)
+    const hasUsersBU = await columnExists('users', 'business_unit_id');
+    const hasUsersLocation = await columnExists('users', 'location_id');
+    const hasUsersCostCenter = await columnExists('users', 'cost_center');
+    const hasUsersEmployeeNumber = await columnExists('users', 'employee_number');
+    const hasBusinessUnits = await tableExists('business_units');
+    const hasLocations = await tableExists('locations');
     
-    if (actorResult.rows.length > 0) {
-      const actorRole = actorResult.rows[0].role_name;
-      const actorBusinessUnitId = actorResult.rows[0].business_unit_id;
+    // SECURITY: BU Admins can ONLY see users in their own Business Unit
+    if (hasUsersBU) {
+      const actorResult = await db.query(
+        dbType === 'mysql'
+          ? `SELECT u.business_unit_id, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?`
+          : `SELECT u.business_unit_id, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = $1`,
+        [req.user.id]
+      );
       
-      if (actorRole && actorRole.toLowerCase().includes('business unit admin') && actorBusinessUnitId) {
-        business_unit_id = actorBusinessUnitId;
-        logger.info(`[SECURITY] BU Admin ${req.user.id} - enforcing business_unit_id: ${actorBusinessUnitId}`);
+      if (actorResult.rows.length > 0) {
+        const actorRole = actorResult.rows[0].role_name;
+        const actorBusinessUnitId = actorResult.rows[0].business_unit_id;
+        
+        if (actorRole && actorRole.toLowerCase().includes('business unit admin') && actorBusinessUnitId) {
+          business_unit_id = actorBusinessUnitId;
+          logger.info(`[SECURITY] BU Admin ${req.user.id} - enforcing business_unit_id: ${actorBusinessUnitId}`);
+        }
       }
     }
     
-    // Simple query for MySQL
+    // Build schema-tolerant query
+    let selectFields = `u.id, u.email, u.display_name, u.role_id, u.is_active, 
+             u.last_login_at, u.created_at, r.name as role_name`;
+    
+    if (hasUsersBU) selectFields += `, u.business_unit_id`;
+    if (hasUsersLocation) selectFields += `, u.location_id`;
+    if (hasUsersCostCenter) selectFields += `, u.cost_center`;
+    if (hasUsersEmployeeNumber) selectFields += `, u.employee_number`;
+    if (hasBusinessUnits && hasUsersBU) selectFields += `, bu.name as business_unit_name, bu.code as business_unit_code`;
+    if (hasLocations && hasUsersLocation) selectFields += `, l.name as location_name`;
+    
+    let joinClauses = `FROM users u
+      JOIN roles r ON u.role_id = r.id`;
+    if (hasBusinessUnits && hasUsersBU) joinClauses += `
+      LEFT JOIN business_units bu ON u.business_unit_id = bu.id`;
+    if (hasLocations && hasUsersLocation) joinClauses += `
+      LEFT JOIN locations l ON u.location_id = l.id`;
+    
     let queryText = `
-      SELECT u.id, u.email, u.display_name, u.role_id, u.is_active, 
-             u.last_login_at, u.created_at, r.name as role_name,
-             u.business_unit_id, u.location_id, u.cost_center, u.employee_number,
-             bu.name as business_unit_name, bu.code as business_unit_code,
-             l.name as location_name
-      FROM users u
-      JOIN roles r ON u.role_id = r.id
-      LEFT JOIN business_units bu ON u.business_unit_id = bu.id
-      LEFT JOIN locations l ON u.location_id = l.id
+      SELECT ${selectFields}
+      ${joinClauses}
       WHERE 1=1
     `;
     
@@ -101,20 +121,26 @@ router.get('/', requireAdmin, async (req, res, next) => {
       params.push(is_active === 'true' || is_active === true ? 1 : 0);
     }
     
-    if (business_unit_id) {
+    if (business_unit_id && hasUsersBU) {
       queryText += ` AND u.business_unit_id = ?`;
       params.push(parseInt(business_unit_id));
     }
     
-    if (req.query.location_id) {
+    if (req.query.location_id && hasUsersLocation) {
       queryText += ` AND u.location_id = ?`;
       params.push(parseInt(req.query.location_id));
     }
     
     if (search) {
-      queryText += ` AND (u.email LIKE ? OR u.display_name LIKE ? OR u.employee_number LIKE ?)`;
-      const searchPattern = `%${search}%`;
-      params.push(searchPattern, searchPattern, searchPattern);
+      if (hasUsersEmployeeNumber) {
+        queryText += ` AND (u.email LIKE ? OR u.display_name LIKE ? OR u.employee_number LIKE ?)`;
+        const searchPattern = `%${search}%`;
+        params.push(searchPattern, searchPattern, searchPattern);
+      } else {
+        queryText += ` AND (u.email LIKE ? OR u.display_name LIKE ?)`;
+        const searchPattern = `%${search}%`;
+        params.push(searchPattern, searchPattern);
+      }
     }
 
     queryText += ` ORDER BY u.created_at DESC LIMIT ? OFFSET ?`;
