@@ -131,7 +131,7 @@ router.get('/jobcard-times',
 
 // GET /api/v1/reports/comprehensive
 router.get('/comprehensive', async (req, res, next) => {
-  // Declare query variables at outer scope for error logging
+  const traceId = `rep-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   let lastQuery = null;
   let lastParams = null;
   
@@ -197,7 +197,13 @@ router.get('/comprehensive', async (req, res, next) => {
     if (userQuery.includes('?') && userQueryParams.length === 0) {
       throw new Error('SQL placeholder without params');
     }
-    const userResult = await db.query(userQuery, userQueryParams);
+    let userResult;
+    try {
+      userResult = await db.query(userQuery, userQueryParams);
+    } catch (err) {
+      console.error('[REPORT QUERY FAIL]', traceId, { message: err.message, query: userQuery, params: userQueryParams });
+      throw err;
+    }
     
     const user = userResult.rows[0] || {};
     const userRole = user.role_name || '';
@@ -376,7 +382,13 @@ router.get('/comprehensive', async (req, res, next) => {
     if (completedQuery.includes('?') && params.length === 0) {
       throw new Error('SQL placeholder without params');
     }
-    const completedResult = await db.query(completedQuery, params);
+    let completedResult;
+    try {
+      completedResult = await db.query(completedQuery, params);
+    } catch (err) {
+      console.error('[REPORT QUERY FAIL]', traceId, { message: err.message, query: completedQuery, params });
+      throw err;
+    }
 
     // Get incomplete job cards
     const incompleteParams = [fromParam, toParam];
@@ -480,7 +492,13 @@ router.get('/comprehensive', async (req, res, next) => {
     if (incompleteQuery.includes('?') && incompleteParams.length === 0) {
       throw new Error('SQL placeholder without params');
     }
-    const incompleteResult = await db.query(incompleteQuery, incompleteParams);
+    let incompleteResult;
+    try {
+      incompleteResult = await db.query(incompleteQuery, incompleteParams);
+    } catch (err) {
+      console.error('[REPORT QUERY FAIL]', traceId, { message: err.message, query: incompleteQuery, params: incompleteParams });
+      throw err;
+    }
 
     // Technician breakdown: completed by completion date; incomplete by created date
     const techParams = [fromParam, toParam, fromParam, toParam];
@@ -550,7 +568,12 @@ router.get('/comprehensive', async (req, res, next) => {
       if (techBreakdownQuery.includes('?') && techParams.length === 0) {
         throw new Error('SQL placeholder without params');
       }
-      techBreakdownResult = await db.query(techBreakdownQuery, techParams);
+      try {
+        techBreakdownResult = await db.query(techBreakdownQuery, techParams);
+      } catch (err) {
+        console.error('[REPORT QUERY FAIL]', traceId, { message: err.message, query: techBreakdownQuery, params: techParams });
+        throw err;
+      }
     } else {
       logger.warn('Technicians table does not exist - skipping technician breakdown');
     }
@@ -657,7 +680,9 @@ router.get('/comprehensive', async (req, res, next) => {
     return res.status(500).json({
       error: {
         code: 'REPORT_INTERNAL_ERROR',
-        message: 'Failed to generate report'
+        message: 'Failed to generate report',
+        traceId,
+        detail: err.message
       }
     });
   }
