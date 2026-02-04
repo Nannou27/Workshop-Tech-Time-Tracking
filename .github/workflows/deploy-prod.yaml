@@ -102,7 +102,7 @@ jobs:
         run: |
           helm upgrade --install workshop-time-tracking \
             k8s-templates/charts/app-base \
-            -f k8s-values/workshop/prod/time-tracking.yaml \
+            -f k8s-values/workshop-time-tracking/prod.yaml \
             --set image.tag=${{ github.sha }} \
             -n ${{ env.NAMESPACE }} \
             --create-namespace
