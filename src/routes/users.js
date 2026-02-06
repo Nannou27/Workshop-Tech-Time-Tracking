@@ -606,6 +606,9 @@ router.post('/',
         });
       }
 
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('[AUTH] password updated for user', user.id);
+      }
       logger.info(`[AUTH] password_hash updated for user_id=${user.id}`);
 
       // AUTO-CREATE / UPDATE TECHNICIAN PROFILE if role is Technician (shared service)
@@ -818,8 +821,15 @@ router.patch('/:id',
       // Only admin can change business_unit_id, location_id, cost_center, employee_number
       // Check if user is admin by role name (not just roleId which might be wrong)
       if (business_unit_id !== undefined && isAdmin && hasBusinessUnitId && businessUnitsTableExists) {
-        // Only validate if business_unit_id has a value (not null, not empty)
-        if (business_unit_id !== null && business_unit_id !== '') {
+        // Safety guard: Check if business_unit_id is a valid ID (not null/empty/"0"/0)
+        const isValidBusinessUnitId = business_unit_id && business_unit_id !== '' && business_unit_id !== '0' && business_unit_id !== 0;
+        
+        if (process.env.NODE_ENV !== 'production') {
+          console.debug(`[USER UPDATE] business_unit_id validation - raw value: ${JSON.stringify(business_unit_id)}, isValid: ${isValidBusinessUnitId}`);
+        }
+        
+        // Only validate if business_unit_id has a value (not null, not empty, not 0)
+        if (isValidBusinessUnitId) {
           // Validate business unit exists
           const buPlaceholder = dbType === 'mysql' ? '?' : '$1';
           const buCheck = await db.query(
@@ -843,8 +853,26 @@ router.patch('/:id',
       }
       
       if (location_id !== undefined && (isAdmin || canManageTechnicianUser) && hasLocationId && locationsTableExists) {
-        // Only validate if location_id has a value (not null, not empty)
-        if (location_id !== null && location_id !== '') {
+        // Safety guard: Check if location_id represents a valid assignable location
+        // Handles: null, undefined, empty string, 0, "0", false, "" from "None (Unassigned)" dropdown
+        const isValidLocationId = location_id && location_id !== '' && location_id !== '0' && location_id !== 0;
+        
+        // Example payloads and expected behavior:
+        // 1. {password: "newpass123456", location_id: null} → skip validation, set to null ✓
+        // 2. {business_unit_id: 5, location_id: ""} → skip validation, set to empty ✓
+        // 3. {location_id: 0} → skip validation, set to 0/null ✓
+        // 4. {location_id: 42} → validate location 42 exists, then set ✓
+        
+        if (process.env.NODE_ENV !== 'production') {
+          console.debug(`[USER UPDATE] location_id validation - raw value: ${JSON.stringify(location_id)}, isValid: ${isValidLocationId}`);
+        }
+        
+        // Only validate if location_id represents an actual location (not "unassigned")
+        if (isValidLocationId) {
+          if (process.env.NODE_ENV !== 'production') {
+            console.debug(`[USER UPDATE] Validating location_id: ${location_id}`);
+          }
+          
           // Validate location exists (and enforce BU scoping for Service Advisors managing technicians)
           const hasLocationBU = await columnExists('locations', 'business_unit_id');
           const locPlaceholder = dbType === 'mysql' ? '?' : '$1';
@@ -874,6 +902,10 @@ router.patch('/:id',
                 }
               });
             }
+          }
+        } else {
+          if (process.env.NODE_ENV !== 'production') {
+            console.debug(`[USER UPDATE] Skipping location validation - treating as unassigned`);
           }
         }
         
@@ -1003,6 +1035,9 @@ router.patch('/:id',
               }
             });
           }
+          if (process.env.NODE_ENV !== 'production') {
+            console.debug('[AUTH] password updated for user', userId);
+          }
           logger.info(`[AUTH] password_hash updated for user_id=${userId}`);
         }
 
@@ -1082,6 +1117,9 @@ router.patch('/:id',
                 message: 'Password was not properly saved'
               }
             });
+          }
+          if (process.env.NODE_ENV !== 'production') {
+            console.debug('[AUTH] password updated for user', userId);
           }
           logger.info(`[AUTH] password_hash updated for user_id=${userId}`);
         }

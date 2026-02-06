@@ -517,8 +517,7 @@ router.post('/reset-password',
       );
 
       // Verify update succeeded
-      const affectedRows = dbType === 'mysql' ? updateResult.rows.affectedRows : updateResult.rowCount;
-      if (affectedRows === 0) {
+      if (updateResult.rowCount === 0) {
         throw new Error('Failed to update password - no rows affected');
       }
 
@@ -534,6 +533,9 @@ router.post('/reset-password',
         throw new Error('Password verification failed after update');
       }
 
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('[AUTH] password updated for user', targetUser.id);
+      }
       logger.info(`[AUTH] password_hash updated for user_id=${targetUser.id}`);
 
       // Create audit log
@@ -658,6 +660,9 @@ router.post('/change-password',
         throw new Error('Password verification failed after update');
       }
 
+      if (process.env.NODE_ENV !== 'production') {
+        console.debug('[AUTH] password updated for user', user.id);
+      }
       logger.info(`[AUTH] password_hash updated for user_id=${user.id}`);
 
       // Create audit log
