@@ -735,6 +735,7 @@ router.patch('/:id',
       const { 
         display_name, 
         is_active, 
+        password,
         business_unit_id,
         location_id,
         supervisor_id,
@@ -782,6 +783,36 @@ router.patch('/:id',
         paramCount++;
         updates.push(`is_active = ${placeholder}${dbType === 'mysql' ? '' : paramCount}`);
         params.push(is_active);
+      }
+
+      // Admin can change password
+      if (password !== undefined && isAdmin) {
+        if (password.length < 12) {
+          return res.status(400).json({
+            error: {
+              code: 'VALIDATION_ERROR',
+              message: 'Password must be at least 12 characters'
+            }
+          });
+        }
+
+        // Hash password using same logic as user creation
+        const passwordHash = await bcrypt.hash(password, 10);
+
+        // Validate hash format
+        if (!passwordHash || !passwordHash.startsWith('$2')) {
+          return res.status(500).json({
+            error: {
+              code: 'INTERNAL_ERROR',
+              message: 'Password hashing failed'
+            }
+          });
+        }
+
+        paramCount++;
+        updates.push(`password_hash = ${placeholder}${dbType === 'mysql' ? '' : paramCount}`);
+        params.push(passwordHash);
+        logger.info(`[UPDATE] Admin updating password for user ${userId}`);
       }
       
       // Only admin can change business_unit_id, location_id, cost_center, employee_number
@@ -951,11 +982,31 @@ router.patch('/:id',
           });
         }
 
+        // Verify password_hash if password was updated
+        if (password !== undefined && isAdmin) {
+          const verifyPwResult = await db.query(
+            'SELECT password_hash FROM users WHERE id = ?',
+            [userId]
+          );
+          if (!verifyPwResult.rows[0]?.password_hash || !verifyPwResult.rows[0].password_hash.startsWith('$2')) {
+            logger.error(`Password verification failed after admin update for user_id=${userId}`);
+            return res.status(500).json({
+              error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Password was not properly saved'
+              }
+            });
+          }
+          logger.info(`[AUTH] password_hash updated for user_id=${userId}`);
+        }
+
         // Create audit log
+        const auditDetails = { ...req.body };
+        if (auditDetails.password) delete auditDetails.password; // Don't log password
         await db.query(
           `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
            VALUES (?, 'user.updated', 'user', ?, ?)`,
-          [req.user.id, userId, JSON.stringify(req.body)]
+          [req.user.id, userId, JSON.stringify(auditDetails)]
         );
 
         logger.info(`[USER UPDATE] User ${userId} updated successfully. BU: ${result.rows[0].business_unit_id}, Location: ${result.rows[0].location_id}`);
@@ -1011,11 +1062,31 @@ router.patch('/:id',
           }
         }
 
+        // Verify password_hash if password was updated
+        if (password !== undefined && isAdmin) {
+          const verifyPwResult = await db.query(
+            'SELECT password_hash FROM users WHERE id = $1',
+            [userId]
+          );
+          if (!verifyPwResult.rows[0]?.password_hash || !verifyPwResult.rows[0].password_hash.startsWith('$2')) {
+            logger.error(`Password verification failed after admin update for user_id=${userId}`);
+            return res.status(500).json({
+              error: {
+                code: 'INTERNAL_ERROR',
+                message: 'Password was not properly saved'
+              }
+            });
+          }
+          logger.info(`[AUTH] password_hash updated for user_id=${userId}`);
+        }
+
         // Create audit log
+        const auditDetails = { ...req.body };
+        if (auditDetails.password) delete auditDetails.password; // Don't log password
         await db.query(
           `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
            VALUES ($1, 'user.updated', 'user', $2, $3)`,
-          [req.user.id, userId, JSON.stringify(req.body)]
+          [req.user.id, userId, JSON.stringify(auditDetails)]
         );
         
         logger.info(`[USER UPDATE] User ${userId} updated successfully. BU: ${user.business_unit_id}, Location: ${user.location_id}`);
