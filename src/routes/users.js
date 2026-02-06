@@ -998,18 +998,22 @@ router.patch('/:id',
   }
 );
 
-// DELETE /api/v1/users/:id
+// DELETE /api/v1/users/:id (Soft delete - deactivates user)
 router.delete('/:id', requireAdmin, async (req, res, next) => {
   try {
     const userId = req.params.id;
+    const dbType = process.env.DB_TYPE || 'postgresql';
+    const placeholder = dbType === 'mysql' ? '?' : '$1';
 
-    // Soft delete
-    const result = await db.query(
-      'UPDATE users SET is_active = false WHERE id = $1 RETURNING id',
+    // Prevent deactivation of Super Admin
+    const userCheck = await db.query(
+      dbType === 'mysql'
+        ? `SELECT u.id, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = ?`
+        : `SELECT u.id, r.name as role_name FROM users u JOIN roles r ON u.role_id = r.id WHERE u.id = $1`,
       [userId]
     );
 
-    if (result.rows.length === 0) {
+    if (userCheck.rows.length === 0) {
       return res.status(404).json({
         error: {
           code: 'RESOURCE_NOT_FOUND',
@@ -1018,18 +1022,45 @@ router.delete('/:id', requireAdmin, async (req, res, next) => {
       });
     }
 
-    // Create audit log
-    await db.query(
-      `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
-       VALUES ($1, 'user.deleted', 'user', $2, $3)`,
-      [req.user.id, userId, JSON.stringify({ soft_delete: true })]
+    const targetUser = userCheck.rows[0];
+    if (targetUser.role_name === 'Super Admin') {
+      return res.status(403).json({
+        error: {
+          code: 'AUTHORIZATION_FAILED',
+          message: 'Cannot deactivate Super Admin users'
+        }
+      });
+    }
+
+    // Soft delete - deactivate user (preserves all data and relationships)
+    const deactivateValue = dbType === 'mysql' ? 0 : false;
+    const result = await db.query(
+      dbType === 'mysql'
+        ? 'UPDATE users SET is_active = ? WHERE id = ?'
+        : 'UPDATE users SET is_active = $1 WHERE id = $2 RETURNING id',
+      dbType === 'mysql' ? [deactivateValue, userId] : [deactivateValue, userId]
     );
 
+    // Create audit log
+    if (dbType === 'mysql') {
+      await db.query(
+        `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
+         VALUES (?, 'user.deactivated', 'user', ?, ?)`,
+        [req.user.id, userId, JSON.stringify({ deactivated: true })]
+      );
+    } else {
+      await db.query(
+        `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
+         VALUES ($1, 'user.deactivated', 'user', $2, $3)`,
+        [req.user.id, userId, JSON.stringify({ deactivated: true })]
+      );
+    }
+
     res.json({
-      message: 'User deleted successfully'
+      message: 'User deactivated successfully'
     });
   } catch (error) {
-    logger.error('Delete user error:', error);
+    logger.error('Deactivate user error:', error);
     next(error);
   }
 });

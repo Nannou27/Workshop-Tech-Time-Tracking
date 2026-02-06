@@ -2229,7 +2229,7 @@
                                 <td><span class="badge ${u.is_active ? 'success' : 'danger'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
                                 <td>
                                     <button class="btn-edit" data-user-id="${String(u.id)}" data-action="edit">Edit</button>
-                                    <button class="btn-danger" data-user-id="${String(u.id)}" data-user-email="${(u.email || '').replace(/"/g, '&quot;')}" data-action="delete">Delete</button>
+                                    <button class="btn-danger" data-user-id="${String(u.id)}" data-user-email="${(u.email || '').replace(/"/g, '&quot;')}" data-user-role="${u.role_name || ''}" data-action="delete">Deactivate</button>
                                 </td>
                             </tr>
                         `;
@@ -2255,7 +2255,8 @@
                         btn.addEventListener('click', function() {
                             const userId = this.getAttribute('data-user-id'); // Keep as string (UUID)
                             const userEmail = this.getAttribute('data-user-email');
-                            deleteUser(userId, userEmail);
+                            const userRole = this.getAttribute('data-user-role');
+                            deleteUser(userId, userEmail, userRole);
                         });
                     });
                 } else {
@@ -2366,9 +2367,13 @@
             }
         }
 
-        // Delete user
-        async function deleteUser(userId, userEmail) {
-            if (!confirm(`Are you sure you want to delete user "${userEmail}"?\n\nThis action cannot be undone. The user will be permanently removed from the system.`)) {
+        // Deactivate user (soft delete)
+        async function deleteUser(userId, userEmail, userRole) {
+            if (userRole === 'Super Admin') {
+                alert('Cannot deactivate Super Admin users.');
+                return;
+            }
+            if (!confirm(`Are you sure you want to deactivate user "${userEmail}"?\n\nThe user will be marked as inactive but all data will be preserved. You can reactivate them later if needed.`)) {
                 return;
             }
             
@@ -2378,7 +2383,7 @@
                 });
                 
                 if (response.ok) {
-                    alert('User deleted successfully');
+                    alert('User deactivated successfully');
                     loadUsers();
                 } else {
                     const data = await response.json();

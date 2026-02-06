@@ -2389,7 +2389,7 @@
                                 <td><span class="badge ${u.is_active ? 'success' : 'danger'}">${u.is_active ? 'Active' : 'Inactive'}</span></td>
                                 <td>
                                     <button onclick="editUser('${u.id}')" style="background: #007bff; color: white; padding: 5px 10px; border: none; border-radius: 3px; cursor: pointer; margin-right: 5px;">Edit</button>
-                                    <button onclick="deleteUser('${u.id}', '${u.email}')" style="background: #dc3545; color: white; padding: 5px 10px; border: none; border-radius: 3px; cursor: pointer;">Delete</button>
+                                    <button onclick="deleteUser('${u.id}', '${u.email}', '${u.role_name || ''}')" style="background: #dc3545; color: white; padding: 5px 10px; border: none; border-radius: 3px; cursor: pointer;">Deactivate</button>
                                 </td>
                             </tr>
                         `;
@@ -2860,16 +2860,20 @@
             }
         }
 
-        async function deleteUser(id, email) {
-            if (!confirm(`Are you sure you want to delete user "${email}"?\n\nThis action cannot be undone.`)) return;
+        async function deleteUser(id, email, roleName) {
+            if (roleName === 'Super Admin') {
+                alert('Cannot deactivate Super Admin users.');
+                return;
+            }
+            if (!confirm(`Are you sure you want to deactivate user "${email}"?\n\nThe user will be marked as inactive but all data will be preserved. You can reactivate them later if needed.`)) return;
             try {
                 const response = await apiFetch(`${API_BASE_URL}/users/${id}`, { method: 'DELETE' });
                 if (response.ok) {
-                    alert('✓ User deleted successfully');
+                    alert('✓ User deactivated successfully');
                     loadUsers();
                 } else {
                     const data = await response.json();
-                    alert('Error: ' + (data.error?.message || 'Failed to delete user'));
+                    alert('Error: ' + (data.error?.message || 'Failed to deactivate user'));
                 }
             } catch (error) {
                 alert('Error: ' + error.message);
