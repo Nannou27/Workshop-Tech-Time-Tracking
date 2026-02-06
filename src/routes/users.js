@@ -739,6 +739,7 @@ router.patch('/:id',
         display_name, 
         is_active, 
         password,
+        role_id,
         business_unit_id,
         location_id,
         supervisor_id,
@@ -786,6 +787,49 @@ router.patch('/:id',
         paramCount++;
         updates.push(`is_active = ${placeholder}${dbType === 'mysql' ? '' : paramCount}`);
         params.push(is_active);
+      }
+
+      // Admin can change role
+      if (role_id !== undefined && isAdmin) {
+        // Validate role exists
+        const rolePlaceholder = dbType === 'mysql' ? '?' : '$1';
+        const roleCheck = await db.query(
+          `SELECT id FROM roles WHERE id = ${rolePlaceholder}`,
+          [role_id]
+        );
+        if (roleCheck.rows.length === 0) {
+          return res.status(400).json({
+            error: {
+              code: 'INVALID_ROLE',
+              message: 'Role not found'
+            }
+          });
+        }
+
+        // BU Admin can only change roles for users in their BU
+        if (req.user.roleName === 'Business Unit Admin' && hasBusinessUnitId) {
+          const targetUserPlaceholder = dbType === 'mysql' ? '?' : '$1';
+          const targetUserCheck = await db.query(
+            `SELECT business_unit_id FROM users WHERE id = ${targetUserPlaceholder}`,
+            [userId]
+          );
+          if (targetUserCheck.rows.length > 0) {
+            const targetBU = targetUserCheck.rows[0].business_unit_id;
+            if (targetBU && String(targetBU) !== String(actorBusinessUnitId)) {
+              return res.status(403).json({
+                error: {
+                  code: 'AUTHORIZATION_FAILED',
+                  message: 'Cannot change role for users outside your business unit'
+                }
+              });
+            }
+          }
+        }
+
+        paramCount++;
+        updates.push(`role_id = ${placeholder}${dbType === 'mysql' ? '' : paramCount}`);
+        params.push(role_id);
+        logger.info(`[UPDATE] Admin updating role_id for user ${userId} to: ${role_id}`);
       }
 
       // Admin can change password
