@@ -642,8 +642,7 @@ router.post('/change-password',
       );
 
       // Verify update succeeded
-      const affectedRows = dbType === 'mysql' ? updateResult.rows.affectedRows : updateResult.rowCount;
-      if (affectedRows === 0) {
+      if (updateResult.rowCount === 0) {
         throw new Error('Failed to update password - no rows affected');
       }
 

@@ -53,9 +53,11 @@ const query = async (text, params) => {
       }
       // Use query instead of execute - execute is too strict for dynamic queries
       const [rows, fields] = await pool.query(mysqlText, params || []);
+      // For MySQL: SELECT returns array, UPDATE/INSERT/DELETE returns object with affectedRows
+      const isArray = Array.isArray(rows);
       res = {
         rows: rows,
-        rowCount: rows.length,
+        rowCount: isArray ? rows.length : (rows.affectedRows || 0),
         fields: fields
       };
     } else {
