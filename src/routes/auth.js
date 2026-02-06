@@ -498,11 +498,16 @@ router.post('/reset-password',
       // Hash new password
       const passwordHash = await bcrypt.hash(new_password, 10);
 
+      // Validate hash format
+      if (!passwordHash || !passwordHash.startsWith('$2')) {
+        throw new Error('Password hashing failed');
+      }
+
       // Clear reset token and update password
       delete targetUser.parsedMetadata.password_reset_token;
       delete targetUser.parsedMetadata.password_reset_expiry;
 
-      await db.query(
+      const updateResult = await db.query(
         dbType === 'mysql'
           ? 'UPDATE users SET password_hash = ?, metadata = ? WHERE id = ?'
           : 'UPDATE users SET password_hash = $1, metadata = $2 WHERE id = $3',
@@ -510,6 +515,26 @@ router.post('/reset-password',
           ? [passwordHash, JSON.stringify(targetUser.parsedMetadata), targetUser.id]
           : [passwordHash, targetUser.parsedMetadata, targetUser.id]
       );
+
+      // Verify update succeeded
+      const affectedRows = dbType === 'mysql' ? updateResult.rows.affectedRows : updateResult.rowCount;
+      if (affectedRows === 0) {
+        throw new Error('Failed to update password - no rows affected');
+      }
+
+      // Verify password_hash was actually set
+      const verifyResult = await db.query(
+        dbType === 'mysql'
+          ? 'SELECT password_hash FROM users WHERE id = ?'
+          : 'SELECT password_hash FROM users WHERE id = $1',
+        [targetUser.id]
+      );
+
+      if (!verifyResult.rows[0]?.password_hash || !verifyResult.rows[0].password_hash.startsWith('$2')) {
+        throw new Error('Password verification failed after update');
+      }
+
+      logger.info(`[AUTH] password_hash updated for user_id=${targetUser.id}`);
 
       // Create audit log
       if (dbType === 'mysql') {
@@ -601,8 +626,13 @@ router.post('/change-password',
       // Hash new password
       const passwordHash = await bcrypt.hash(new_password, 10);
 
+      // Validate hash format
+      if (!passwordHash || !passwordHash.startsWith('$2')) {
+        throw new Error('Password hashing failed');
+      }
+
       // Update password
-      await db.query(
+      const updateResult = await db.query(
         dbType === 'mysql'
           ? 'UPDATE users SET password_hash = ? WHERE id = ?'
           : 'UPDATE users SET password_hash = $1 WHERE id = $2',
@@ -610,6 +640,26 @@ router.post('/change-password',
           ? [passwordHash, user.id]
           : [passwordHash, user.id]
       );
+
+      // Verify update succeeded
+      const affectedRows = dbType === 'mysql' ? updateResult.rows.affectedRows : updateResult.rowCount;
+      if (affectedRows === 0) {
+        throw new Error('Failed to update password - no rows affected');
+      }
+
+      // Verify password_hash was actually set
+      const verifyResult = await db.query(
+        dbType === 'mysql'
+          ? 'SELECT password_hash FROM users WHERE id = ?'
+          : 'SELECT password_hash FROM users WHERE id = $1',
+        [user.id]
+      );
+
+      if (!verifyResult.rows[0]?.password_hash || !verifyResult.rows[0].password_hash.startsWith('$2')) {
+        throw new Error('Password verification failed after update');
+      }
+
+      logger.info(`[AUTH] password_hash updated for user_id=${user.id}`);
 
       // Create audit log
       if (dbType === 'mysql') {

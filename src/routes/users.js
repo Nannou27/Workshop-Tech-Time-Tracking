@@ -468,6 +468,16 @@ router.post('/',
       // Hash password
       const passwordHash = await bcrypt.hash(password, 10);
 
+      // Validate hash format
+      if (!passwordHash || !passwordHash.startsWith('$2')) {
+        return res.status(500).json({
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Password hashing failed'
+          }
+        });
+      }
+
       let user;
       
       // Build INSERT columns and values conditionally
@@ -577,6 +587,26 @@ router.post('/',
           }
         }
       }
+
+      // Verify password_hash was actually set
+      const verifyResult = await db.query(
+        dbType === 'mysql'
+          ? 'SELECT password_hash FROM users WHERE id = ?'
+          : 'SELECT password_hash FROM users WHERE id = $1',
+        [user.id]
+      );
+
+      if (!verifyResult.rows[0]?.password_hash || !verifyResult.rows[0].password_hash.startsWith('$2')) {
+        logger.error(`Password verification failed after user creation for user_id=${user.id}`);
+        return res.status(500).json({
+          error: {
+            code: 'INTERNAL_ERROR',
+            message: 'Password was not properly saved'
+          }
+        });
+      }
+
+      logger.info(`[AUTH] password_hash updated for user_id=${user.id}`);
 
       // AUTO-CREATE / UPDATE TECHNICIAN PROFILE if role is Technician (shared service)
       const roleCheckPlaceholder = dbType === 'mysql' ? '?' : '$1';
