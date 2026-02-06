@@ -364,6 +364,278 @@ router.get('/me', authenticate, async (req, res, next) => {
   }
 });
 
+// POST /api/v1/auth/forgot-password (NON-PROD)
+router.post('/forgot-password',
+  [body('email').isEmail().normalizeEmail()],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Validation failed',
+            details: errors.array()
+          }
+        });
+      }
+
+      const { email } = req.body;
+      const dbType = process.env.DB_TYPE || 'postgresql';
+
+      // Find user
+      const userResult = await db.query(
+        dbType === 'mysql'
+          ? 'SELECT id, email, metadata FROM users WHERE email = ?'
+          : 'SELECT id, email, metadata FROM users WHERE email = $1',
+        [email]
+      );
+
+      // Always return 200 to prevent user enumeration
+      if (userResult.rows.length > 0) {
+        const user = userResult.rows[0];
+        const crypto = require('crypto');
+        const resetToken = crypto.randomBytes(32).toString('hex');
+        const resetExpiry = Date.now() + 30 * 60 * 1000; // 30 minutes
+
+        // Update metadata with reset token
+        const metadata = typeof user.metadata === 'string' 
+          ? JSON.parse(user.metadata) 
+          : (user.metadata || {});
+        
+        metadata.password_reset_token = resetToken;
+        metadata.password_reset_expiry = resetExpiry;
+
+        await db.query(
+          dbType === 'mysql'
+            ? 'UPDATE users SET metadata = ? WHERE id = ?'
+            : 'UPDATE users SET metadata = $1 WHERE id = $2',
+          dbType === 'mysql'
+            ? [JSON.stringify(metadata), user.id]
+            : [metadata, user.id]
+        );
+
+        // Log reset link to console (no real email in non-prod)
+        const resetLink = `http://localhost:3000/reset-password.html?token=${resetToken}`;
+        console.log('\n========================================');
+        console.log('PASSWORD RESET REQUEST (NON-PROD)');
+        console.log('========================================');
+        console.log(`User: ${user.email}`);
+        console.log(`Reset Link: ${resetLink}`);
+        console.log(`Expires: ${new Date(resetExpiry).toISOString()}`);
+        console.log('========================================\n');
+      }
+
+      res.json({
+        message: 'If an account exists with that email, a password reset link has been sent.'
+      });
+    } catch (error) {
+      logger.error('Forgot password error:', error);
+      next(error);
+    }
+  }
+);
+
+// POST /api/v1/auth/reset-password (NON-PROD)
+router.post('/reset-password',
+  [
+    body('token').notEmpty(),
+    body('new_password').isLength({ min: 12 })
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Validation failed',
+            details: errors.array()
+          }
+        });
+      }
+
+      const { token, new_password } = req.body;
+      const dbType = process.env.DB_TYPE || 'postgresql';
+
+      // Find user by token
+      const users = await db.query(
+        'SELECT id, email, metadata FROM users'
+      );
+
+      let targetUser = null;
+      for (const user of users.rows) {
+        const metadata = typeof user.metadata === 'string' 
+          ? JSON.parse(user.metadata) 
+          : (user.metadata || {});
+        
+        if (metadata.password_reset_token === token) {
+          targetUser = { ...user, parsedMetadata: metadata };
+          break;
+        }
+      }
+
+      if (!targetUser) {
+        return res.status(400).json({
+          error: {
+            code: 'INVALID_TOKEN',
+            message: 'Invalid or expired reset token'
+          }
+        });
+      }
+
+      // Check token expiry
+      if (!targetUser.parsedMetadata.password_reset_expiry || 
+          Date.now() > targetUser.parsedMetadata.password_reset_expiry) {
+        return res.status(400).json({
+          error: {
+            code: 'TOKEN_EXPIRED',
+            message: 'Reset token has expired'
+          }
+        });
+      }
+
+      // Hash new password
+      const passwordHash = await bcrypt.hash(new_password, 10);
+
+      // Clear reset token and update password
+      delete targetUser.parsedMetadata.password_reset_token;
+      delete targetUser.parsedMetadata.password_reset_expiry;
+
+      await db.query(
+        dbType === 'mysql'
+          ? 'UPDATE users SET password_hash = ?, metadata = ? WHERE id = ?'
+          : 'UPDATE users SET password_hash = $1, metadata = $2 WHERE id = $3',
+        dbType === 'mysql'
+          ? [passwordHash, JSON.stringify(targetUser.parsedMetadata), targetUser.id]
+          : [passwordHash, targetUser.parsedMetadata, targetUser.id]
+      );
+
+      // Create audit log
+      if (dbType === 'mysql') {
+        await db.query(
+          `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
+           VALUES (?, 'password.reset', 'user', ?, ?)`,
+          [targetUser.id, targetUser.id, JSON.stringify({ email: targetUser.email })]
+        );
+      } else {
+        await db.query(
+          `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
+           VALUES ($1, 'password.reset', 'user', $2, $3)`,
+          [targetUser.id, targetUser.id, JSON.stringify({ email: targetUser.email })]
+        );
+      }
+
+      res.json({
+        message: 'Password has been reset successfully'
+      });
+    } catch (error) {
+      logger.error('Reset password error:', error);
+      next(error);
+    }
+  }
+);
+
+// POST /api/v1/auth/change-password
+router.post('/change-password',
+  authenticate,
+  [
+    body('current_password').notEmpty(),
+    body('new_password').isLength({ min: 12 })
+  ],
+  async (req, res, next) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Validation failed',
+            details: errors.array()
+          }
+        });
+      }
+
+      const { current_password, new_password } = req.body;
+      const dbType = process.env.DB_TYPE || 'postgresql';
+
+      // Get user's current password hash
+      const userResult = await db.query(
+        dbType === 'mysql'
+          ? 'SELECT id, email, password_hash FROM users WHERE id = ?'
+          : 'SELECT id, email, password_hash FROM users WHERE id = $1',
+        [req.user.id]
+      );
+
+      if (userResult.rows.length === 0) {
+        return res.status(404).json({
+          error: {
+            code: 'RESOURCE_NOT_FOUND',
+            message: 'User not found'
+          }
+        });
+      }
+
+      const user = userResult.rows[0];
+
+      // Verify current password
+      if (!user.password_hash) {
+        return res.status(400).json({
+          error: {
+            code: 'SSO_USER',
+            message: 'SSO users cannot change password'
+          }
+        });
+      }
+
+      const isValid = await bcrypt.compare(current_password, user.password_hash);
+      if (!isValid) {
+        return res.status(401).json({
+          error: {
+            code: 'INVALID_PASSWORD',
+            message: 'Current password is incorrect'
+          }
+        });
+      }
+
+      // Hash new password
+      const passwordHash = await bcrypt.hash(new_password, 10);
+
+      // Update password
+      await db.query(
+        dbType === 'mysql'
+          ? 'UPDATE users SET password_hash = ? WHERE id = ?'
+          : 'UPDATE users SET password_hash = $1 WHERE id = $2',
+        dbType === 'mysql'
+          ? [passwordHash, user.id]
+          : [passwordHash, user.id]
+      );
+
+      // Create audit log
+      if (dbType === 'mysql') {
+        await db.query(
+          `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
+           VALUES (?, 'password.changed', 'user', ?, ?)`,
+          [user.id, user.id, JSON.stringify({ email: user.email })]
+        );
+      } else {
+        await db.query(
+          `INSERT INTO audit_logs (actor_id, action, object_type, object_id, details)
+           VALUES ($1, 'password.changed', 'user', $2, $3)`,
+          [user.id, user.id, JSON.stringify({ email: user.email })]
+        );
+      }
+
+      res.json({
+        message: 'Password changed successfully'
+      });
+    } catch (error) {
+      logger.error('Change password error:', error);
+      next(error);
+    }
+  }
+);
+
 module.exports = router;
 
 
