@@ -818,19 +818,22 @@ router.patch('/:id',
       // Only admin can change business_unit_id, location_id, cost_center, employee_number
       // Check if user is admin by role name (not just roleId which might be wrong)
       if (business_unit_id !== undefined && isAdmin && hasBusinessUnitId && businessUnitsTableExists) {
-        // Validate business unit exists
-        const buPlaceholder = dbType === 'mysql' ? '?' : '$1';
-        const buCheck = await db.query(
-          `SELECT id FROM business_units WHERE id = ${buPlaceholder}`,
-          [business_unit_id]
-        );
-        if (buCheck.rows.length === 0) {
-          return res.status(400).json({
-            error: {
-              code: 'INVALID_BUSINESS_UNIT',
-              message: 'Business unit not found'
-            }
-          });
+        // Only validate if business_unit_id has a value (not null, not empty)
+        if (business_unit_id !== null && business_unit_id !== '') {
+          // Validate business unit exists
+          const buPlaceholder = dbType === 'mysql' ? '?' : '$1';
+          const buCheck = await db.query(
+            `SELECT id FROM business_units WHERE id = ${buPlaceholder}`,
+            [business_unit_id]
+          );
+          if (buCheck.rows.length === 0) {
+            return res.status(400).json({
+              error: {
+                code: 'INVALID_BUSINESS_UNIT',
+                message: 'Business unit not found'
+              }
+            });
+          }
         }
         
         paramCount++;
@@ -840,34 +843,37 @@ router.patch('/:id',
       }
       
       if (location_id !== undefined && (isAdmin || canManageTechnicianUser) && hasLocationId && locationsTableExists) {
-        // Validate location exists (and enforce BU scoping for Service Advisors managing technicians)
-        const hasLocationBU = await columnExists('locations', 'business_unit_id');
-        const locPlaceholder = dbType === 'mysql' ? '?' : '$1';
-        const locCheck = await db.query(
-          hasLocationBU
-            ? `SELECT id, business_unit_id FROM locations WHERE id = ${locPlaceholder}`
-            : `SELECT id FROM locations WHERE id = ${locPlaceholder}`,
-          [location_id]
-        );
-        if (locCheck.rows.length === 0) {
-          return res.status(400).json({
-            error: {
-              code: 'INVALID_LOCATION',
-              message: 'Location not found'
-            }
-          });
-        }
-
-        // If a Service Advisor is updating a technician, the target location must belong to the advisor's BU (when schema supports it)
-        if (canManageTechnicianUser && actorBusinessUnitId && hasLocationBU) {
-          const locBu = locCheck.rows[0].business_unit_id;
-          if (locBu && String(locBu) !== String(actorBusinessUnitId)) {
-            return res.status(403).json({
+        // Only validate if location_id has a value (not null, not empty)
+        if (location_id !== null && location_id !== '') {
+          // Validate location exists (and enforce BU scoping for Service Advisors managing technicians)
+          const hasLocationBU = await columnExists('locations', 'business_unit_id');
+          const locPlaceholder = dbType === 'mysql' ? '?' : '$1';
+          const locCheck = await db.query(
+            hasLocationBU
+              ? `SELECT id, business_unit_id FROM locations WHERE id = ${locPlaceholder}`
+              : `SELECT id FROM locations WHERE id = ${locPlaceholder}`,
+            [location_id]
+          );
+          if (locCheck.rows.length === 0) {
+            return res.status(400).json({
               error: {
-                code: 'AUTHORIZATION_FAILED',
-                message: 'Cannot set technician location outside your business unit'
+                code: 'INVALID_LOCATION',
+                message: 'Location not found'
               }
             });
+          }
+
+          // If a Service Advisor is updating a technician, the target location must belong to the advisor's BU (when schema supports it)
+          if (canManageTechnicianUser && actorBusinessUnitId && hasLocationBU) {
+            const locBu = locCheck.rows[0].business_unit_id;
+            if (locBu && String(locBu) !== String(actorBusinessUnitId)) {
+              return res.status(403).json({
+                error: {
+                  code: 'AUTHORIZATION_FAILED',
+                  message: 'Cannot set technician location outside your business unit'
+                }
+              });
+            }
           }
         }
         
