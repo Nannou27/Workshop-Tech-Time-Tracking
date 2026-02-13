@@ -11,6 +11,25 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_ACCESS_EXPIRY = parseInt(process.env.JWT_ACCESS_EXPIRY) || 900; // 15 minutes
 const JWT_REFRESH_EXPIRY = parseInt(process.env.JWT_REFRESH_EXPIRY) || 604800; // 7 days
 
+// Helper: Legacy email normalization (for backward compatibility with old user records)
+// Mimics express-validator's normalizeEmail() behavior
+const getLegacyNormalizedEmail = (email) => {
+  if (!email) return email;
+  
+  let normalized = email.toLowerCase().trim();
+  
+  // Remove plus-tags from all domains (user+tag@domain.com → user@domain.com)
+  normalized = normalized.replace(/\+[^@]*@/, '@');
+  
+  // Remove dots from Gmail addresses only (before @)
+  const [localPart, domain] = normalized.split('@');
+  if (domain === 'gmail.com' || domain === 'googlemail.com') {
+    return localPart.replace(/\./g, '') + '@' + domain;
+  }
+  
+  return normalized;
+};
+
 // Generate tokens
 const generateTokens = (userId) => {
   const accessToken = jwt.sign(
@@ -49,8 +68,8 @@ router.post('/login',
 
       const { email, password } = req.body;
 
-      // Find user
-      const userResult = await db.query(
+      // Find user - try exact match first, then legacy normalized (backward compatibility)
+      let userResult = await db.query(
         `SELECT u.id, u.email, u.display_name, u.password_hash, u.role_id, u.is_active,
                 u.business_unit_id, u.location_id,
                 r.name as role_name
@@ -59,6 +78,22 @@ router.post('/login',
          WHERE u.email = $1`,
         [email]
       );
+
+      // Fallback: try legacy normalized email for old user records
+      if (userResult.rows.length === 0) {
+        const legacyEmail = getLegacyNormalizedEmail(email);
+        if (legacyEmail !== email) {
+          userResult = await db.query(
+            `SELECT u.id, u.email, u.display_name, u.password_hash, u.role_id, u.is_active,
+                    u.business_unit_id, u.location_id,
+                    r.name as role_name
+             FROM users u
+             JOIN roles r ON u.role_id = r.id
+             WHERE u.email = $1`,
+            [legacyEmail]
+          );
+        }
+      }
 
       if (userResult.rows.length === 0) {
         return res.status(401).json({
@@ -383,13 +418,26 @@ router.post('/forgot-password',
       const { email } = req.body;
       const dbType = process.env.DB_TYPE || 'postgresql';
 
-      // Find user
-      const userResult = await db.query(
+      // Find user - try exact match first, then legacy normalized (backward compatibility)
+      let userResult = await db.query(
         dbType === 'mysql'
           ? 'SELECT id, email, metadata FROM users WHERE email = ?'
           : 'SELECT id, email, metadata FROM users WHERE email = $1',
         [email]
       );
+
+      // Fallback: try legacy normalized email for old user records
+      if (userResult.rows.length === 0) {
+        const legacyEmail = getLegacyNormalizedEmail(email);
+        if (legacyEmail !== email) {
+          userResult = await db.query(
+            dbType === 'mysql'
+              ? 'SELECT id, email, metadata FROM users WHERE email = ?'
+              : 'SELECT id, email, metadata FROM users WHERE email = $1',
+            [legacyEmail]
+          );
+        }
+      }
 
       // Always return 200 to prevent user enumeration
       if (userResult.rows.length > 0) {
