@@ -58,7 +58,7 @@
   }
 
   function applyBranding(b) {
-    const systemName = (b && b.system_name) ? String(b.system_name) : 'WTTT';
+    const systemName = (b && b.system_name) ? String(b.system_name) : 'Legend Workshop System';
     applyCssVars(b.colors || {});
 
     // Apply system name
