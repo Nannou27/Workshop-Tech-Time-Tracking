@@ -31,7 +31,7 @@ const generateTokens = (userId) => {
 // POST /api/v1/auth/login
 router.post('/login',
   [
-    body('email').isEmail().normalizeEmail(),
+    body('email').isEmail().trim().toLowerCase(),
     body('password').notEmpty()
   ],
   async (req, res, next) => {
@@ -366,7 +366,7 @@ router.get('/me', authenticate, async (req, res, next) => {
 
 // POST /api/v1/auth/forgot-password (NON-PROD)
 router.post('/forgot-password',
-  [body('email').isEmail().normalizeEmail()],
+  [body('email').isEmail().trim().toLowerCase()],
   async (req, res, next) => {
     try {
       const errors = validationResult(req);

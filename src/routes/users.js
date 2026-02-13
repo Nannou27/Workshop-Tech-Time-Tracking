@@ -323,7 +323,7 @@ router.post('/',
     next();
   },
   [
-    body('email').isEmail().normalizeEmail(),
+    body('email').isEmail().trim().toLowerCase(),
     body('display_name').notEmpty().trim(),
     body('password').isLength({ min: 12 }),
     body('role_id').isInt()
