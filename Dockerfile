@@ -31,6 +31,7 @@ COPY *.js ./
 COPY schema*.sql ./
 COPY favicon.svg ./
 
+
 # Create logs directory
 RUN mkdir -p logs && chown -R nodejs:nodejs /app
 
