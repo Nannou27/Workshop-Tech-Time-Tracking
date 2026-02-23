@@ -2,10 +2,11 @@
 node_modules/
 yarn.lock
 
-# Environment variables
-.env
+# Environment variables (Production only - demo .env is committed)
+# .env
 .env.local
 .env.*.local
+.env.production
 
 # Logs
 logs/
